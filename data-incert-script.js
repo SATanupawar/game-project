@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const User = require('./models/User'); // Adjust the path as needed
+const User = require('./models/user'); // Adjust the path as needed
 const Building = require('./models/building'); // Adjust the path as needed
 const Creature = require('./models/creature'); // Adjust the path as needed
 
