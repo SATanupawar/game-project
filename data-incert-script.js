@@ -22,7 +22,11 @@ async function createData() {
             name: 'Dragon Lair',
             gold_coins: 0, // Set to 0 or appropriate value if creature generates gold
             creature_id: creature._id,
-            creature_count: 1
+            creature_count: 1,
+            position: {
+                x: 18,
+                y: 17
+            }
         });
         await building.save();
 
@@ -30,7 +34,11 @@ async function createData() {
         const buildingWithoutCreature1 = new Building({
             buildingId: 'building456',
             name: 'Gold Mine',
-            gold_coins: 30 // Fixed gold coins for this building
+            gold_coins: 30,// Fixed gold coins for this building
+            position: {
+                x: 18,
+                y: 17
+            }
         });
         await buildingWithoutCreature1.save();
 
@@ -38,7 +46,11 @@ async function createData() {
         const buildingWithoutCreature2 = new Building({
             buildingId: 'building789',
             name: 'Silver Mine',
-            gold_coins: 20 // Fixed gold coins for this building
+            gold_coins: 20, // Fixed gold coins for this building
+            position: {
+                x: 18,
+                y: 17
+            }
         });
         await buildingWithoutCreature2.save();
 

@@ -114,6 +114,7 @@ async function getBuildingGoldDetails(userId, buildingId) {
         return {
             buildingId: building.buildingId,
             name: building.name,
+            position: building.position,
             previousGold,
             addedGold,
             totalGold

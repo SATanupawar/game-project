@@ -22,6 +22,16 @@ const buildingSchema = new mongoose.Schema({
     creature_count: {
         type: Number,
         default: 0 // Default to 0 for buildings without creatures
+    },
+    position: {
+        x: {
+            type: Number,
+            required: true
+        },
+        y: {
+            type: Number,
+            required: true
+        }
     }
 }, {
     timestamps: true
