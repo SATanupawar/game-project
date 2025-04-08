@@ -41,7 +41,6 @@ async function updateUserGold(userId) {
             if (building.creature_id) {
                 // Calculate gold from creatures
                 const creature = building.creature_id;
-                console.log('Creature:', creature); // Debugging log
                 const goldPerHour = creature.gold_coins; // Ensure this field exists and is correct
                 goldGenerated = goldPerHour * timeDifference;
             } else {
@@ -53,13 +52,13 @@ async function updateUserGold(userId) {
             buildingContributions.push({
                 buildingId: building.buildingId,
                 name: building.name,
-                goldGenerated: Math.floor(goldGenerated)
+                goldGenerated: goldGenerated.toFixed(2) // Show two decimal places
             });
         });
 
         const previousGold = user.gold_coins;
-        const addedGold = Math.floor(totalGoldGenerated);
-        const totalGold = previousGold + addedGold;
+        const addedGold = totalGoldGenerated.toFixed(2); // Show two decimal places
+        const totalGold = previousGold + parseFloat(addedGold);
 
         user.gold_coins = totalGold;
         user.logout_time = currentTime; // Update logout time to current time
@@ -71,7 +70,61 @@ async function updateUserGold(userId) {
     }
 }
 
+async function getBuildingGoldDetails(userId, buildingId) {
+    try {
+        const user = await User.findOne({ userId }).populate({
+            path: 'buildings',
+            populate: { path: 'creature_id' }
+        });
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        const building = user.buildings.find(b => b._id.toString() === buildingId);
+
+        if (!building) {
+            throw new Error('Building not found');
+        }
+
+        const currentTime = new Date();
+        const timeDifference = (currentTime - user.logout_time) / (1000 * 60 * 60); // Convert to hours
+
+        let goldGenerated = 0;
+        if (building.creature_id) {
+            // Calculate gold from creatures
+            const creature = building.creature_id;
+            const goldPerHour = creature.gold_coins; // Ensure this field exists and is correct
+            goldGenerated = goldPerHour * timeDifference;
+        } else {
+            // Calculate gold from building itself
+            const buildingGoldPerHour = building.gold_coins; // Use the building's gold_coins
+            goldGenerated = buildingGoldPerHour * timeDifference;
+        }
+
+        const previousGold = user.gold_coins;
+        const addedGold = goldGenerated.toFixed(2); // Show two decimal places
+        const totalGold = previousGold + parseFloat(addedGold);
+
+        // Update user's gold coins and logout time
+        user.gold_coins = totalGold;
+        user.logout_time = currentTime;
+        await user.save();
+
+        return {
+            buildingId: building.buildingId,
+            name: building.name,
+            previousGold,
+            addedGold,
+            totalGold
+        };
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
     getUserWithDetails,
-    updateUserGold
+    updateUserGold,
+    getBuildingGoldDetails
 };
