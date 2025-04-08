@@ -1,9 +1,16 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
+// console.log('Environment variables:');
+// console.log('MONGODB_URI:', process.env.MONGODB_URI);
+// console.log('PORT:', process.env.PORT);
+// console.log('NODE_ENV:', process.env.NODE_ENV);
+
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const userRoutes = require('./routes/userRoute');
 const buildingRoutes = require('./routes/buildingRoute');
-require('dotenv').config();
 
 const app = express();
 
