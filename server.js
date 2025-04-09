@@ -11,6 +11,8 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const userRoutes = require('./routes/userRoute');
 const buildingRoutes = require('./routes/buildingRoute');
+const creatureRoutes = require('./routes/creatureRoute');
+const User = require('./models/user');
 
 const app = express();
 
@@ -25,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/users', userRoutes);
 app.use('/api/buildings', buildingRoutes);
+app.use('/api/creatures', creatureRoutes);
 
 // Get a user with buildings and creatures
 app.get('/api/users/:userId', async (req, res) => {

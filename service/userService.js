@@ -1,13 +1,23 @@
 const User = require('../models/user');
 const Building = require('../models/building');
 const Creature = require('../models/creature');
+const mongoose = require('mongoose');
 
-async function getUserWithDetails(userId) {
+async function getUserWithDetails(userIdParam) {
     try {
-        const user = await User.findOne({ userId }).populate({
+        // Try to find by userId first
+        let user = await User.findOne({ userId: userIdParam }).populate({
             path: 'buildings',
             populate: { path: 'creature_id' }
         });
+
+        // If not found, try to find by MongoDB _id
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam).populate({
+                path: 'buildings',
+                populate: { path: 'creature_id' }
+            });
+        }
 
         if (!user) {
             throw new Error('User not found');
@@ -19,12 +29,21 @@ async function getUserWithDetails(userId) {
     }
 }
 
-async function updateUserGold(userId) {
+async function updateUserGold(userIdParam) {
     try {
-        const user = await User.findOne({ userId }).populate({
+        // Try to find by userId first
+        let user = await User.findOne({ userId: userIdParam }).populate({
             path: 'buildings',
             populate: { path: 'creature_id' }
         });
+
+        // If not found, try to find by MongoDB _id
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam).populate({
+                path: 'buildings',
+                populate: { path: 'creature_id' }
+            });
+        }
 
         if (!user) {
             throw new Error('User not found');
@@ -70,18 +89,33 @@ async function updateUserGold(userId) {
     }
 }
 
-async function getBuildingGoldDetails(userId, buildingId) {
+async function getBuildingGoldDetails(userIdParam, buildingId) {
     try {
-        const user = await User.findOne({ userId }).populate({
+        // Try to find by userId first
+        let user = await User.findOne({ userId: userIdParam }).populate({
             path: 'buildings',
             populate: { path: 'creature_id' }
         });
+
+        // If not found, try to find by MongoDB _id
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam).populate({
+                path: 'buildings',
+                populate: { path: 'creature_id' }
+            });
+        }
 
         if (!user) {
             throw new Error('User not found');
         }
 
-        const building = user.buildings.find(b => b._id.toString() === buildingId);
+        // Try to find by buildingId or _id
+        let building = user.buildings.find(b => b.buildingId === buildingId);
+        
+        // If not found and valid ObjectId, try by _id
+        if (!building && mongoose.Types.ObjectId.isValid(buildingId)) {
+            building = user.buildings.find(b => b._id.toString() === buildingId);
+        }
 
         if (!building) {
             throw new Error('Building not found');
