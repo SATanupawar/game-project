@@ -167,91 +167,54 @@ async function createLevelsAndCreatures() {
             await displayCreatureInfo(creature);
         }
 
-        // Create buildings for each creature
-        for (let i = 0; i < savedCreatures.length; i++) {
-            const building = new Building({
-                buildingId: `building${i + 1}`,
-                name: `${savedCreatures[i].name} Lair`,
-                gold_coins: 0,
-                creature_id: savedCreatures[i]._id,
-                creature_count: 1,
-                position: {
-                    x: 18,
-                    y: 17 + i
-                }
-            });
+        // Create 4 buildings
+        const buildings = [
+            {
+                buildingId: 'building1',
+                name: 'Dark Library',
+                gold_coins: 30,
+                size: { x: 2, y: 3 }
+            },
+            {
+                buildingId: 'building2',
+                name: 'Beast Sanctum',
+                gold_coins: 40,
+                size: { x: 3, y: 3 }
+            },
+            {
+                buildingId: 'building3',
+                name: 'Fortress',
+                gold_coins: 50,
+                size: { x: 3, y: 3 }
+            },
+            {
+                buildingId: 'building4',
+                name: 'Tavern',
+                gold_coins: 35,
+                size: { x: 3, y: 2 }
+            }
+        ];
+
+        const savedBuildings = [];
+        for (const buildingData of buildings) {
+            const building = new Building(buildingData);
             await building.save();
-            console.log(`Created building for ${savedCreatures[i].name}`);
+            savedBuildings.push(building);
+            console.log(`Created building: ${building.name}`);
         }
 
-        // Create buildings without creatures (original code)
-        const buildingWithoutCreature1 = new Building({
-            buildingId: 'building456',
-            name: 'Gold Mine',
-            gold_coins: 30,
-            position: {
-                x: 18,
-                y: 17
-            }
+        // Create one user without any buildings
+        const user = new User({
+            userId: 'user1',
+            user_name: 'Player1',
+            gold_coins: 1000,
+            buildings: []  // Empty buildings array
         });
-        await buildingWithoutCreature1.save();
-
-        const buildingWithoutCreature2 = new Building({
-            buildingId: 'building789',
-            name: 'Silver Mine',
-            gold_coins: 20,
-            position: {
-                x: 18,
-                y: 17
-            }
-        });
-        await buildingWithoutCreature2.save();
-
-        // Create user (original code)
-        const userWithoutCreature = new User({
-            userId: 'user456',
-            user_name: 'Player2',
-            gold_coins: 100,
-            buildings: [buildingWithoutCreature1._id, buildingWithoutCreature2._id]
-        });
-        await userWithoutCreature.save();
+        await user.save();
+        console.log('Created user without any buildings');
 
         console.log('All data created successfully!');
 
-        // Example: Update Dragon to level 5
-        await updateCreatureLevel('creature1', 5);
-
-        // Display all creatures in the database
-        console.log('\nAll Creatures in Database:');
-        const allCreatures = await Creature.find();
-        for (const creature of allCreatures) {
-            await displayCreatureInfo(creature);
-            console.log('------------------------');
-        }
-
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
-
-async function updateUserBuildings() {
-    try {
-        // Find the building with a creature
-        const buildingWithCreature = await Building.findOne({ buildingId: 'building1' });
-
-        if (!buildingWithCreature) {
-            console.log('Building with creature not found');
-            return;
-        }
-
-        // Update the user's buildings to include the building with a creature
-        const user = await User.findOneAndUpdate(
-            { userId: 'user456' },
-            { $addToSet: { buildings: buildingWithCreature._id } }, // Add the building if not already present
-            { new: true }
-        );
-
-        console.log('Updated user:', user);
     } catch (error) {
         console.error('Error:', error);
     }
@@ -261,7 +224,6 @@ async function main() {
     try {
         await mongoose.connect('mongodb+srv://satyam:game_project@cluster0.jr08s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', { useNewUrlParser: true, useUnifiedTopology: true });
         await createLevelsAndCreatures();
-        await updateUserBuildings();
     } catch (error) {
         console.error('Error:', error);
     } finally {

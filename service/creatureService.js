@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Creature = require('../models/creature');
 const CreatureLevel = require('../models/creature_level');
 
@@ -7,7 +8,8 @@ const CreatureLevel = require('../models/creature_level');
  */
 const getAllCreatures = async () => {
     try {
-        return await Creature.find();
+        const creatures = await Creature.find().populate('level');
+        return creatures;
     } catch (error) {
         throw new Error(`Error fetching creatures: ${error.message}`);
     }
@@ -20,10 +22,20 @@ const getAllCreatures = async () => {
  */
 const getCreatureById = async (creatureId) => {
     try {
-        const creature = await Creature.findOne({ creature_Id: creatureId });
-        if (!creature) {
-            throw new Error(`Creature with ID ${creatureId} not found`);
+        let creature = null;
+        
+        // Try to find by creature_Id first
+        creature = await Creature.findOne({ creature_Id: creatureId }).populate('level');
+        
+        // If not found and valid ObjectId, try by _id
+        if (!creature && mongoose.Types.ObjectId.isValid(creatureId)) {
+            creature = await Creature.findById(creatureId).populate('level');
         }
+
+        if (!creature) {
+            throw new Error('Creature not found');
+        }
+
         return creature;
     } catch (error) {
         throw new Error(`Error fetching creature: ${error.message}`);
@@ -33,15 +45,36 @@ const getCreatureById = async (creatureId) => {
 /**
  * Get all levels for a specific creature
  * @param {string} creatureId - Creature ID
- * @returns {Promise<Array>} Array of levels
+ * @returns {Promise<Object>} Object containing creature and levels
  */
 const getCreatureLevels = async (creatureId) => {
     try {
-        const levels = await CreatureLevel.find({ creature_Id: creatureId }).sort('level');
-        if (!levels.length) {
-            throw new Error(`No levels found for creature with ID ${creatureId}`);
+        let creature = null;
+        
+        // Try to find by creature_Id first
+        creature = await Creature.findOne({ creature_Id: creatureId });
+        
+        // If not found and valid ObjectId, try by _id
+        if (!creature && mongoose.Types.ObjectId.isValid(creatureId)) {
+            creature = await Creature.findById(creatureId);
         }
-        return levels;
+
+        if (!creature) {
+            throw new Error('Creature not found');
+        }
+
+        const levels = await CreatureLevel.find({ creature_Id: creature.creature_Id })
+            .sort({ level: 1 });
+
+        return {
+            creature: {
+                creature_Id: creature.creature_Id,
+                name: creature.name,
+                type: creature.type,
+                image: creature.image
+            },
+            levels: levels
+        };
     } catch (error) {
         throw new Error(`Error fetching creature levels: ${error.message}`);
     }
@@ -55,28 +88,57 @@ const getCreatureLevels = async (creatureId) => {
  */
 const updateCreatureLevel = async (creatureId, levelNumber) => {
     try {
-        // Find the creature
-        const creature = await Creature.findOne({ creature_Id: creatureId });
-        if (!creature) {
-            throw new Error(`Creature with ID ${creatureId} not found`);
+        let creature = null;
+        
+        // Try to find by creature_Id first
+        creature = await Creature.findOne({ creature_Id: creatureId });
+        
+        // If not found and valid ObjectId, try by _id
+        if (!creature && mongoose.Types.ObjectId.isValid(creatureId)) {
+            creature = await Creature.findById(creatureId);
         }
 
-        // Find the new level
+        if (!creature) {
+            throw new Error('Creature not found');
+        }
+
+        // Make sure the new level is valid (1-40)
+        if (levelNumber < 1 || levelNumber > 40) {
+            throw new Error('Level must be between 1 and 40');
+        }
+
+        // Find the requested level
         const newLevel = await CreatureLevel.findOne({
-            creature_Id: creatureId,
+            creature_Id: creature.creature_Id,
             level: levelNumber
         });
 
         if (!newLevel) {
-            throw new Error(`Level ${levelNumber} not found for creature with ID ${creatureId}`);
+            throw new Error(`Level ${levelNumber} not found for this creature`);
         }
+
+        // Store the previous level
+        const previousLevel = creature.levelNumber;
 
         // Update the creature's level
         creature.level = newLevel._id;
-        creature.levelNumber = newLevel.level;
+        creature.levelNumber = levelNumber;
         await creature.save();
 
-        return creature;
+        return {
+            creature: {
+                creature_Id: creature.creature_Id,
+                name: creature.name,
+                previousLevel: previousLevel,
+                newLevel: levelNumber,
+                attack: newLevel.attack,
+                health: newLevel.health,
+                speed: newLevel.speed,
+                armor: newLevel.armor,
+                critical_health: newLevel.critical_health,
+                critical_damage: newLevel.critical_damage
+            }
+        };
     } catch (error) {
         throw new Error(`Error updating creature level: ${error.message}`);
     }

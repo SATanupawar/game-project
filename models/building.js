@@ -14,27 +14,41 @@ const buildingSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    creature_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Creature',
-        default: null // Allows for buildings without creatures
-    },
-    creature_count: {
-        type: Number,
-        default: 0 // Default to 0 for buildings without creatures
-    },
     position: {
         x: {
+            type: Number
+        },
+        y: {
+            type: Number
+        }
+    },
+    size: {
+        x: {
             type: Number,
-            required: true
+            required: true,
+            default: 1
         },
         y: {
             type: Number,
-            required: true
+            required: true,
+            default: 1
         }
-    }
+    },
+    creatures: [{
+        creature_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Creature'
+        },
+        count: {
+            type: Number,
+            default: 0
+        }
+    }]
 }, {
     timestamps: true
 });
+
+// Create a compound index to ensure each building has a unique buildingId
+buildingSchema.index({ buildingId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Building', buildingSchema);

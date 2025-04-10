@@ -19,8 +19,33 @@ const userSchema = new mongoose.Schema({
         required: true
     },
     buildings: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Building'
+        buildingId: String,
+        name: String,
+        gold_coins: Number,
+        position: {
+            x: Number,
+            y: Number
+        },
+        size: {
+            x: Number,
+            y: Number
+        },
+        index: Number,
+        last_collected: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    creatures: [{
+        creature_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Creature'
+        },
+        building_index: Number, // Reference to the building's index
+        count: {
+            type: Number,
+            default: 1
+        }
     }],
     logout_time: {
         type: Date,

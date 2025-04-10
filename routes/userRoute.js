@@ -1,15 +1,39 @@
 const express = require('express');
 const router = express.Router();
-const { updateUserGold, getBuildingGoldDetails } = require('../service/userService');
-const userService = require('../service/userService');
+const { 
+    updateUserGold, 
+    getBuildingGoldDetails, 
+    assignBuildingToUser,
+    assignMultipleBuildingsToUser,
+    addCreatureToBuilding,
+    updateBuildingCreatureLevel,
+    getBuildingCreatures,
+    getUserWithDetails,
+    getUserBuildings,
+    updateBuildingPosition
+} = require('../service/userService');
 
 // Get a user with buildings and creatures
 router.get('/:userId', async (req, res) => {
     try {
-        const user = await userService.getUserWithDetails(req.params.userId);
-        res.json(user);
+        const user = await getUserWithDetails(req.params.userId);
+        res.status(200).json({
+            success: true,
+            message: 'User details fetched successfully',
+            data: user
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
     }
 });
 
@@ -30,6 +54,225 @@ router.get('/:userId/building/:buildingId', async (req, res) => {
         res.json(buildingDetails);
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+});
+
+// Assign a single building to user
+router.post('/:userId/buildings/assign', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { buildingId, position } = req.body;
+        
+        if (!buildingId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Building ID is required' 
+            });
+        }
+
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Valid position (x, y) is required' 
+            });
+        }
+        
+        const result = await assignBuildingToUser(userId, buildingId, position);
+        res.status(201).json({
+            success: true,
+            message: 'Building assigned to user successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Assign multiple buildings to user
+router.post('/:userId/buildings/assign-multiple', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { buildingIds } = req.body;
+        
+        if (!buildingIds || !Array.isArray(buildingIds) || buildingIds.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Array of building IDs is required' 
+            });
+        }
+        
+        const result = await assignMultipleBuildingsToUser(userId, buildingIds);
+        res.status(201).json({
+            success: true,
+            message: 'Buildings assigned to user successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Add creature to building
+router.post('/:userId/buildings/:buildingIdentifier/creatures/:creatureId', async (req, res) => {
+    try {
+        const { userId, buildingIdentifier, creatureId } = req.params;
+        const result = await addCreatureToBuilding(userId, buildingIdentifier, creatureId);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Creature added to building successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Update a specific creature's level in a user's building
+router.put('/:userId/buildings/:buildingId/creatures/:creatureId/level/:levelNumber', async (req, res) => {
+    try {
+        const { userId, buildingId, creatureId, levelNumber } = req.params;
+        const newLevelNumber = parseInt(levelNumber);
+        
+        if (isNaN(newLevelNumber)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Level number must be a valid number' 
+            });
+        }
+        
+        const result = await updateBuildingCreatureLevel(userId, buildingId, creatureId, newLevelNumber);
+        
+        res.status(200).json({
+            success: true,
+            message: `Creature level updated to ${newLevelNumber}`,
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found') || 
+            error.message.includes('does not have') ||
+            error.message.includes('must be between')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Get building creatures details
+router.get('/:userId/buildings/:buildingId/creatures', async (req, res) => {
+    try {
+        const { userId, buildingId } = req.params;
+        const result = await getBuildingCreatures(userId, buildingId);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Building creatures fetched successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Get user buildings
+router.get('/:userId/buildings', async (req, res) => {
+    try {
+        const result = await getUserBuildings(req.params.userId);
+        res.status(200).json(result);
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Update building position
+router.put('/:userId/buildings/:buildingId/position', async (req, res) => {
+    try {
+        const { userId, buildingId } = req.params;
+        const { position } = req.body;
+
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid position (x, y) is required'
+            });
+        }
+
+        const result = await updateBuildingPosition(userId, buildingId, position);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Building position updated successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
     }
 });
 

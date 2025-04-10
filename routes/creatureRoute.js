@@ -1,41 +1,73 @@
 const express = require('express');
 const router = express.Router();
-const creatureService = require('../service/creatureService');
+const { 
+    getAllCreatures,
+    getCreatureById,
+    getCreatureLevels,
+    updateCreatureLevel
+} = require('../service/creatureService');
 
 // Get all creatures
 router.get('/', async (req, res) => {
     try {
-        const creatures = await creatureService.getAllCreatures();
-        res.status(200).json(creatures);
+        const creatures = await getAllCreatures();
+        res.status(200).json({
+            success: true,
+            message: 'Creatures fetched successfully',
+            data: creatures
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
     }
 });
 
 // Get creature by ID
 router.get('/:creatureId', async (req, res) => {
     try {
-        const creature = await creatureService.getCreatureById(req.params.creatureId);
-        res.status(200).json(creature);
+        const creature = await getCreatureById(req.params.creatureId);
+        res.status(200).json({
+            success: true,
+            message: 'Creature fetched successfully',
+            data: creature
+        });
     } catch (error) {
         if (error.message.includes('not found')) {
-            res.status(404).json({ message: error.message });
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
         } else {
-            res.status(500).json({ message: error.message });
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
         }
     }
 });
 
-// Get all levels for a specific creature
+// Get creature levels
 router.get('/:creatureId/levels', async (req, res) => {
     try {
-        const levels = await creatureService.getCreatureLevels(req.params.creatureId);
-        res.status(200).json(levels);
+        const result = await getCreatureLevels(req.params.creatureId);
+        res.status(200).json({
+            success: true,
+            message: 'Creature levels fetched successfully',
+            data: result
+        });
     } catch (error) {
         if (error.message.includes('not found')) {
-            res.status(404).json({ message: error.message });
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
         } else {
-            res.status(500).json({ message: error.message });
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
         }
     }
 });
@@ -44,21 +76,32 @@ router.get('/:creatureId/levels', async (req, res) => {
 router.put('/:creatureId/level/:levelNumber', async (req, res) => {
     try {
         const levelNumber = parseInt(req.params.levelNumber);
-        if (isNaN(levelNumber) || levelNumber < 1 || levelNumber > 40) {
-            return res.status(400).json({ message: 'Level number must be between 1 and 40' });
-        }
-
-        const updatedCreature = await creatureService.updateCreatureLevel(
-            req.params.creatureId,
-            levelNumber
-        );
         
-        res.status(200).json(updatedCreature);
+        if (isNaN(levelNumber)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Level number must be a valid number' 
+            });
+        }
+        
+        const result = await updateCreatureLevel(req.params.creatureId, levelNumber);
+        res.status(200).json({
+            success: true,
+            message: `Creature level updated to ${levelNumber}`,
+            data: result
+        });
     } catch (error) {
-        if (error.message.includes('not found')) {
-            res.status(404).json({ message: error.message });
+        if (error.message.includes('not found') || 
+            error.message.includes('must be between')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
         } else {
-            res.status(500).json({ message: error.message });
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
         }
     }
 });
