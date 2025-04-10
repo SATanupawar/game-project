@@ -284,66 +284,159 @@ async function getBuildingGoldDetails(userIdParam, buildingId) {
 }
 
 // Assign an existing building to a user
-async function assignBuildingToUser(userIdParam, buildingIdParam, position) {
+async function assignBuildingToUser(userIdParam, buildingIdParam, position, creatureIdParam) {
     try {
-        // Try to find user by userId first
-        let user = await User.findOne({ userId: userIdParam });
+        console.log('Starting assignBuildingToUser with params:', { userIdParam, buildingIdParam, position, creatureIdParam });
         
-        // If not found and valid ObjectId, try by _id
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
         if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
             user = await User.findById(userIdParam);
         }
-
         if (!user) {
-            throw new Error('User not found');
+            return { success: false, message: "User not found" };
         }
+        console.log('User found:', user.userId);
 
-        // Find the building template in the database
-        let buildingTemplate = null;
-        
-        // First try by buildingId
-        buildingTemplate = await Building.findOne({ buildingId: buildingIdParam });
-        
-        // If not found and valid ObjectId, try by _id
+        // Find building template
+        let buildingTemplate = await Building.findOne({ buildingId: buildingIdParam });
         if (!buildingTemplate && mongoose.Types.ObjectId.isValid(buildingIdParam)) {
             buildingTemplate = await Building.findById(buildingIdParam);
         }
-
         if (!buildingTemplate) {
-            throw new Error('Building template not found in database');
+            return { success: false, message: "Building template not found" };
         }
+        console.log('Building template found:', buildingTemplate.buildingId);
 
         // Validate position
         if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
-            throw new Error('Valid position (x, y) is required');
+            return { success: false, message: "Valid position (x, y) is required" };
         }
 
-        // Generate a 10-digit random number for index
+        // Generate random index for the building
         const randomIndex = Math.floor(1000000000 + Math.random() * 9000000000);
+        console.log('Generated building index:', randomIndex);
 
-        // Create a new building object with the same properties but new index and position
+        // Create new building object
         const newBuilding = {
             buildingId: buildingTemplate.buildingId,
             name: buildingTemplate.name,
             gold_coins: buildingTemplate.gold_coins,
-            position: position, // Add the provided position
+            position: position,
             size: buildingTemplate.size,
-            index: randomIndex // Set 10-digit random index
+            index: randomIndex
         };
+        console.log('Created new building object:', newBuilding);
 
-        // Add the new building to user's buildings array
+        // Add building to user
         user.buildings.push(newBuilding);
-        await user.save();
+        console.log('Added building to user');
 
-        return {
-            user: {
-                userId: user.userId,
-                user_name: user.user_name
-            },
-            building: newBuilding
+        // Prepare response
+        const response = {
+            success: true,
+            message: "Building assigned to user successfully",
+            data: {
+                user: {
+                    userId: user.userId,
+                    user_name: user.user_name
+                },
+                building: newBuilding
+            }
         };
+
+        // If creatureIdParam is provided, add creature to the building
+        if (creatureIdParam) {
+            console.log('Creature ID provided:', creatureIdParam);
+            
+            // Find creature template
+            const creatureTemplate = await Creature.findOne({ creature_Id: creatureIdParam });
+            console.log('Creature template search result:', creatureTemplate ? 'Found' : 'Not found');
+            
+            if (!creatureTemplate) {
+                // Save building but return error about creature
+                await user.save();
+                console.log('Building saved but creature not found');
+                return {
+                    success: true,
+                    message: "Building assigned but creature not found",
+                    data: response.data
+                };
+            }
+
+            // Find level 1 for creature
+            const level1 = await mongoose.model('CreatureLevel').findOne({ 
+                creature_Id: creatureTemplate.creature_Id,
+                level: 1
+            });
+            console.log('Level 1 search result:', level1 ? 'Found' : 'Not found');
+            
+            if (!level1) {
+                // Save building but return error about creature level
+                await user.save();
+                console.log('Building saved but creature level not found');
+                return {
+                    success: true,
+                    message: "Building assigned but creature level not found",
+                    data: response.data
+                };
+            }
+
+            // Create new creature instance
+            const newCreature = new Creature({
+                creature_Id: creatureTemplate.creature_Id,
+                name: creatureTemplate.name,
+                type: creatureTemplate.type,
+                gold_coins: creatureTemplate.gold_coins,
+                description: creatureTemplate.description,
+                image: creatureTemplate.image,
+                level: level1._id,
+                levelNumber: 1
+            });
+            
+            // Save creature
+            await newCreature.save();
+            console.log('New creature created with ID:', newCreature._id);
+
+            // Initialize user's creatures array if needed
+            if (!user.creatures) {
+                user.creatures = [];
+                console.log('Initialized user creatures array');
+            }
+
+            // Add creature to user and associate with building
+            user.creatures.push({
+                creature_id: newCreature._id,
+                building_index: randomIndex,
+                count: 1
+            });
+            console.log('Added creature to user with building index:', randomIndex);
+
+            // Add creature to response
+            response.data.creature = {
+                _id: newCreature._id,
+                creature_Id: newCreature.creature_Id,
+                name: newCreature.name,
+                type: newCreature.type,
+                level: newCreature.levelNumber,
+                gold_coins: newCreature.gold_coins
+            };
+            
+            response.message = "Building and creature assigned successfully";
+            console.log('Updated response with creature data');
+        }
+
+        // Save changes
+        await user.save();
+        console.log('Saved all changes to user');
+        
+        return response;
     } catch (error) {
-        throw new Error(`Error assigning building to user: ${error.message}`);
+        console.error('Error in assignBuildingToUser:', error);
+        return {
+            success: false,
+            message: `Error: ${error.message}`
+        };
     }
 }
 
@@ -766,7 +859,7 @@ async function getUserBuildings(userIdParam) {
             throw new Error('User not found');
         }
 
-        // Format the buildings data
+        // Format the buildings data - only include creature IDs
         const formattedBuildings = user.buildings.map(building => {
             const buildingData = {
                 _id: building._id,
@@ -778,8 +871,7 @@ async function getUserBuildings(userIdParam) {
                 size: building.size,
                 index: building.index,
                 is_creature_building: false,
-                creature_ids: [], // Array to store creature IDs
-                creatures: [] // Array to store full creature details
+                creature_ids: [] // Only store creature IDs
             };
 
             // Check if building has creatures
@@ -790,39 +882,44 @@ async function getUserBuildings(userIdParam) {
                 buildingData.creature_ids = buildingCreatures.map(creatureEntry => ({
                     creature_id: creatureEntry.creature_id._id,
                     creature_Id: creatureEntry.creature_id.creature_Id,
-                    level: creatureEntry.creature_id.levelNumber
+                    level: creatureEntry.creature_id.levelNumber,
+                    count: creatureEntry.count
                 }));
-
-                // Add full creature details
-                buildingData.creatures = buildingCreatures.map(creatureEntry => {
-                    const creature = creatureEntry.creature_id;
-                    return {
-                        creature_id: creature._id,
-                        creature_Id: creature.creature_Id,
-                        name: creature.name,
-                        level: creature.levelNumber,
-                        type: creature.type,
-                        image: creature.image,
-                        gold_coins: creature.gold_coins,
-                        description: creature.description,
-                        attack: creature.level ? creature.level.attack : null,
-                        health: creature.level ? creature.level.health : null,
-                        speed: creature.level ? creature.level.speed : null,
-                        armor: creature.level ? creature.level.armor : null,
-                        critical_health: creature.level ? creature.level.critical_health : null,
-                        critical_damage: creature.level ? creature.level.critical_damage : null,
-                        count: creatureEntry.count
-                    };
-                });
             }
 
             return buildingData;
         });
 
+        // Create a separate array for all creatures
+        const formattedCreatures = user.creatures.map(creatureEntry => {
+            const creature = creatureEntry.creature_id;
+            return {
+                creature_id: creature._id,
+                creature_Id: creature.creature_Id,
+                name: creature.name,
+                level: creature.levelNumber,
+                type: creature.type,
+                image: creature.image,
+                gold_coins: creature.gold_coins,
+                description: creature.description,
+                attack: creature.level ? creature.level.attack : null,
+                health: creature.level ? creature.level.health : null,
+                speed: creature.level ? creature.level.speed : null,
+                armor: creature.level ? creature.level.armor : null,
+                critical_health: creature.level ? creature.level.critical_health : null,
+                critical_damage: creature.level ? creature.level.critical_damage : null,
+                building_index: creatureEntry.building_index,
+                count: creatureEntry.count
+            };
+        });
+
         return {
             success: true,
-            message: 'User buildings fetched successfully',
-            data: formattedBuildings
+            message: 'User buildings and creatures fetched successfully',
+            data: {
+                buildings: formattedBuildings,
+                creatures: formattedCreatures
+            }
         };
     } catch (error) {
         throw new Error(`Error fetching user buildings: ${error.message}`);

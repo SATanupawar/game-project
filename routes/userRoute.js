@@ -57,11 +57,11 @@ router.get('/:userId/building/:buildingId', async (req, res) => {
     }
 });
 
-// Assign a single building to user
+// Assign an existing building to a user
 router.post('/:userId/buildings/assign', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { buildingId, position } = req.body;
+        const { buildingId, position, creatureId } = req.body;
         
         if (!buildingId) {
             return res.status(400).json({ 
@@ -77,12 +77,8 @@ router.post('/:userId/buildings/assign', async (req, res) => {
             });
         }
         
-        const result = await assignBuildingToUser(userId, buildingId, position);
-        res.status(201).json({
-            success: true,
-            message: 'Building assigned to user successfully',
-            data: result
-        });
+        const result = await assignBuildingToUser(userId, buildingId, position, creatureId);
+        res.status(201).json(result);
     } catch (error) {
         if (error.message.includes('not found')) {
             res.status(404).json({ 
