@@ -12,7 +12,8 @@ const {
     getUserBuildings,
     updateBuildingPosition,
     deleteCreatureFromBuilding,
-    deleteBuildingFromUser
+    deleteBuildingFromUser,
+    getTotalCreaturesForUser
 } = require('../service/userService');
 
 // Get a user with buildings and creatures
@@ -304,6 +305,32 @@ router.delete('/:userId/buildings/:index', async (req, res) => {
             success: true,
             message: 'Building deleted from user successfully',
             data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+// Get total creatures for a user
+router.get('/:userId/creatures/total', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const totalCreatures = await getTotalCreaturesForUser(userId);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Total creatures fetched successfully',
+            data: { totalCreatures }
         });
     } catch (error) {
         if (error.message.includes('not found')) {

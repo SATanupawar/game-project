@@ -1157,6 +1157,23 @@ async function deleteBuildingFromUser(userIdParam, buildingIndexParam) {
     }
 }
 
+// Get total creatures for a user
+async function getTotalCreaturesForUser(userIdParam) {
+    try {
+        const user = await User.findOne({ userId: userIdParam });
+        if (!user) throw new Error('User not found');
+
+        // Count total creatures
+        const totalCreatures = user.creatures.reduce((total, creatureEntry) => {
+            return total + creatureEntry.count; // Sum the counts of each creature
+        }, 0);
+
+        return totalCreatures;
+    } catch (error) {
+        throw new Error(`Error fetching total creatures: ${error.message}`);
+    }
+}
+
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -1170,5 +1187,6 @@ module.exports = {
     updateBuildingPosition,
     collectBuildingCoins,
     deleteCreatureFromBuilding,
-    deleteBuildingFromUser
+    deleteBuildingFromUser,
+    getTotalCreaturesForUser
 };
