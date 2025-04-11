@@ -10,7 +10,9 @@ const {
     getBuildingCreatures,
     getUserWithDetails,
     getUserBuildings,
-    updateBuildingPosition
+    updateBuildingPosition,
+    deleteCreatureFromBuilding,
+    deleteBuildingFromUser
 } = require('../service/userService');
 
 // Get a user with buildings and creatures
@@ -39,8 +41,9 @@ router.get('/:userId', async (req, res) => {
 
 router.get('/update-gold/:userId', async (req, res) => {
     try {
-        const { previousGold, addedGold, totalGold, buildingContributions } = await updateUserGold(req.params.userId);
-        res.json({ previousGold, addedGold, totalGold, buildingContributions });
+        const { boost } = req.query; // Get boost percentage from query params
+        const result = await updateUserGold(req.params.userId, boost);
+        res.json(result);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -50,7 +53,8 @@ router.get('/update-gold/:userId', async (req, res) => {
 router.get('/:userId/building/:buildingId', async (req, res) => {
     try {
         const { userId, buildingId } = req.params;
-        const buildingDetails = await getBuildingGoldDetails(userId, buildingId);
+        const { boost } = req.query; // Get boost percentage from query params
+        const buildingDetails = await getBuildingGoldDetails(userId, buildingId, boost);
         res.json(buildingDetails);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -272,4 +276,48 @@ router.put('/:userId/buildings/:buildingId/position', async (req, res) => {
     }
 });
 
-module.exports = router; 
+router.delete('/:userId/buildings/:index/creatures/:creatureId', async (req, res) => {
+    try {
+        const { userId, index, creatureId } = req.params;
+        const result = await deleteCreatureFromBuilding(userId, index, creatureId);
+
+        res.status(200).json({
+            success: true,
+            message: 'Creature deleted from building successfully',
+            data: result
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Delete a building from a user
+router.delete('/:userId/buildings/:index', async (req, res) => {
+    try {
+        const { userId, index } = req.params;
+        const result = await deleteBuildingFromUser(userId, index);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Building deleted from user successfully',
+            data: result
+        });
+    } catch (error) {
+        if (error.message.includes('not found')) {
+            res.status(404).json({ 
+                success: false, 
+                message: error.message 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    }
+});
+
+module.exports = router;

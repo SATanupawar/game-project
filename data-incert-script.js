@@ -222,7 +222,7 @@ async function createLevelsAndCreatures() {
 
 async function main() {
     try {
-        await mongoose.connect('mongodb+srv://satyam:game_project@cluster0.jr08s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', { useNewUrlParser: true, useUnifiedTopology: true });
+        await mongoose.connect('mongodb+srv://awsexos:exos%40aws2025@cluster0.uuvjvcy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', { useNewUrlParser: true, useUnifiedTopology: true });
         await createLevelsAndCreatures();
     } catch (error) {
         console.error('Error:', error);

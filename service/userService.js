@@ -109,7 +109,7 @@ async function getUserWithDetails(userIdParam) {
     }
 }
 
-async function updateUserGold(userIdParam) {
+async function updateUserGold(userIdParam, globalBoostPercentage = 0) {
     try {
         // Try to find by userId first
         let user = await User.findOne({ userId: userIdParam }).populate({
@@ -140,9 +140,10 @@ async function updateUserGold(userIdParam) {
 
         let totalGoldGenerated = 0;
         const buildingContributions = [];
+        const boost = parseFloat(globalBoostPercentage) || 0;
 
         user.buildings.forEach(building => {
-            let goldGenerated = 0;
+            let baseGoldGenerated = 0;
             if (building.creatures && building.creatures.length > 0) {
                 // Calculate gold from creatures
                 building.creatures.forEach(creatureEntry => {
@@ -150,19 +151,31 @@ async function updateUserGold(userIdParam) {
                         const creature = creatureEntry.creature_id;
                         const count = creatureEntry.count || 1;
                         const goldPerHour = creature.gold_coins * count; // Gold per hour times count
-                        goldGenerated += goldPerHour * timeDifference;
+                        baseGoldGenerated += goldPerHour * timeDifference;
                     }
                 });
             } else {
                 // Calculate gold from building itself
                 const buildingGoldPerHour = building.gold_coins; // Use the building's gold_coins
-                goldGenerated = buildingGoldPerHour * timeDifference;
+                baseGoldGenerated = buildingGoldPerHour * timeDifference;
             }
-            totalGoldGenerated += goldGenerated;
+
+            // Apply boost if provided
+            let boostedAmount = 0;
+            if (boost > 0) {
+                boostedAmount = baseGoldGenerated * (boost / 100);
+            }
+            const totalBuildingGold = baseGoldGenerated + boostedAmount;
+            
+            totalGoldGenerated += totalBuildingGold;
+            
             buildingContributions.push({
                 buildingId: building.buildingId,
                 name: building.name,
-                goldGenerated: goldGenerated.toFixed(2) // Show two decimal places
+                baseGold: baseGoldGenerated.toFixed(2),
+                boostedAmount: boostedAmount.toFixed(2),
+                totalGold: totalBuildingGold.toFixed(2),
+                boostPercentage: boost
             });
         });
 
@@ -174,114 +187,114 @@ async function updateUserGold(userIdParam) {
         user.logout_time = currentTime; // Update logout time to current time
         await user.save();
 
-        return { previousGold, addedGold, totalGold, buildingContributions };
+        return { 
+            previousGold, 
+            addedGold, 
+            totalGold, 
+            boostPercentage: boost,
+            buildingContributions 
+        };
     } catch (error) {
         throw error;
     }
 }
 
-async function getBuildingGoldDetails(userIdParam, buildingId) {
+
+async function getBuildingGoldDetails(userIdParam, buildingId, boostPercentage = 0) {
     try {
-        // Find user and populate buildings
-        let user = await User.findOne({ userId: userIdParam }).populate({
-            path: 'buildings',
-            populate: { 
-                path: 'creatures.creature_id',
-                model: 'Creature'
-            }
-        });
+        // 🧍‍♂️ Get user with embedded buildings
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user) throw new Error('User not found (यूज़र नहीं मिला)');
 
-        if (!user) {
-            throw new Error('User not found');
-        }
-
-        // Find building by index
         const buildingIndex = parseInt(buildingId);
         const building = user.buildings.find(b => b.index === buildingIndex);
-        if (!building) {
-            throw new Error('Building not found');
-        }
+        if (!building) throw new Error('Building not found in user (यूज़र के पास यह बिल्डिंग नहीं है)');
 
-        // Calculate time difference since last collection
         const currentTime = new Date();
         const lastCollectionTime = building.last_collected || user.logout_time;
-        const timeDifference = (currentTime - lastCollectionTime) / (1000 * 60 * 60); // Convert to hours
+        const timeDifference = (currentTime - new Date(lastCollectionTime)) / (1000 * 60 * 60); // in hours
 
-        // Calculate gold generated
-        let goldGenerated = 0;
+        let baseGoldGenerated = 0;
+
+        // 👉 If building has creatures, calculate from them
         if (building.creatures && building.creatures.length > 0) {
-            // Gold from creatures
-            building.creatures.forEach(creatureEntry => {
-                if (creatureEntry.creature_id) {
-                    const creature = creatureEntry.creature_id;
-                    const count = creatureEntry.count || 1;
-                    goldGenerated += creature.gold_coins * count * timeDifference;
+            const creatureIds = building.creatures.map(c => c.creature_id);
+            const creatures = await Creature.find({ _id: { $in: creatureIds } });
+
+            const creatureMap = {};
+            creatures.forEach(c => creatureMap[c._id.toString()] = c);
+
+            building.creatures.forEach(entry => {
+                const creature = creatureMap[entry.creature_id?.toString()];
+                if (creature) {
+                    const count = entry.count || 1;
+                    baseGoldGenerated += creature.gold_coins * count * timeDifference;
                 }
             });
         } else {
-            // Gold from building itself
-            goldGenerated = building.gold_coins * timeDifference;
+            baseGoldGenerated = building.gold_coins * timeDifference;
         }
 
-        // Update user and building data if gold was generated
-        if (goldGenerated > 0) {
+        const boost = parseFloat(boostPercentage) || 0;
+        const boostAmount = baseGoldGenerated * (boost / 100);
+
+        const reserveCoins = parseFloat(building.reserveCoins || 0);
+        const reserveCoinsBeforeReset = reserveCoins;
+
+        const rawGoldAdded = baseGoldGenerated + boostAmount;
+        const totalGoldGenerated = rawGoldAdded + reserveCoins;
+
+        if (totalGoldGenerated > 0) {
             const previousGold = user.gold_coins;
-            const addedGold = goldGenerated.toFixed(2);
-            const totalGold = previousGold + parseFloat(addedGold);
+            const totalGold = previousGold + totalGoldGenerated;
 
-            // Update the specific building's last collected time
-            const buildingIndexInArray = user.buildings.findIndex(b => b.index === buildingIndex);
-            if (buildingIndexInArray !== -1) {
-                user.buildings[buildingIndexInArray].last_collected = currentTime;
-            }
-            
-            // Update user's gold
+            // 🔁 Update building's last_collected & reserve
+            building.last_collected = currentTime;
+            building.reserveCoins = 0;
+
+            // 🧍‍♂️ Update user's gold
             user.gold_coins = totalGold;
-            
-            // Save changes
-            await user.save();
-
-            // Refresh user data to get the latest changes
-            user = await User.findOne({ userId: userIdParam }).populate({
-                path: 'buildings',
-                populate: { 
-                    path: 'creatures.creature_id',
-                    model: 'Creature'
-                }
-            });
-
-            // Get the updated building
-            const updatedBuilding = user.buildings.find(b => b.index === buildingIndex);
+            await user.save(); // saves both user and embedded buildings
 
             return {
-                buildingId: updatedBuilding.buildingId,
-                name: updatedBuilding.name,
-                position: updatedBuilding.position,
-                index: updatedBuilding.index,
+                buildingId: building.buildingId,
+                name: building.name,
+                position: building.position,
+                index: building.index,
                 previousGold,
-                addedGold,
-                totalGold,
-                last_collected: updatedBuilding.last_collected,
-                was_collected: true
+                baseGoldAmount: baseGoldGenerated.toFixed(2),
+                boostAmount: boostAmount.toFixed(2),
+                reserveCoins: reserveCoinsBeforeReset.toFixed(2),
+                addedGold: totalGoldGenerated.toFixed(2),
+                totalGold: totalGold.toFixed(2),
+                last_collected: currentTime,
+                was_collected: true,
+                boost_percentage: boost
             };
         }
 
-        // Return current state if no gold was generated
         return {
             buildingId: building.buildingId,
             name: building.name,
             position: building.position,
             index: building.index,
             previousGold: user.gold_coins,
+            baseGoldAmount: "0.00",
+            boostAmount: "0.00",
+            reserveCoins: reserveCoinsBeforeReset.toFixed(2),
             addedGold: "0.00",
-            totalGold: user.gold_coins,
+            totalGold: user.gold_coins.toFixed(2),
             last_collected: building.last_collected,
-            was_collected: false
+            was_collected: false,
+            boost_percentage: 0
         };
+
     } catch (error) {
-        throw error;
+        throw new Error(`Error fetching building gold details: ${error.message}`);
     }
 }
+
+
 
 // Assign an existing building to a user
 async function assignBuildingToUser(userIdParam, buildingIdParam, position, creatureIdParam) {
@@ -324,7 +337,8 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             gold_coins: buildingTemplate.gold_coins,
             position: position,
             size: buildingTemplate.size,
-            index: randomIndex
+            index: randomIndex,
+            reserveCoins: 0 // Initialize reserveCoins here
         };
         console.log('Created new building object:', newBuilding);
 
@@ -968,16 +982,178 @@ async function updateBuildingPosition(userIdParam, buildingIdentifier, newPositi
 
         // Update the building position
         building.position = newPosition;
+
+        // Calculate coins based on last collected time
+        const currentTime = new Date();
+        const lastCollectionTime = building.last_collected || user.logout_time;
+        const timeDifference = (currentTime - lastCollectionTime) / (1000 * 60 * 60); // Convert to hours
+
+        // Calculate base coins generated
+        const baseCoinsGenerated = building.gold_coins * timeDifference; // Assuming gold_coins is the rate per hour
+
+        // Apply boost percentage if provided
+        const boostPercentage = 10; // Example boost percentage, you can modify this as needed
+        const boostedAmount = baseCoinsGenerated * (boostPercentage / 100);
+        const totalCoinsGenerated = baseCoinsGenerated + boostedAmount;
+
+        // Update reserveCoins
+        building.reserveCoins = (building.reserveCoins || 0) + totalCoinsGenerated; // Ensure reserveCoins is initialized
+
+        // Update last collected time
+        building.last_collected = currentTime;
+
         await user.save();
 
         return {
             buildingId: building.buildingId,
             name: building.name,
             position: building.position,
-            index: building.index
+            index: building.index,
+            reserveCoins: building.reserveCoins.toFixed(2) // Ensure this is correctly accessed
         };
     } catch (error) {
         throw new Error(`Error updating building position: ${error.message}`);
+    }
+}
+
+async function collectBuildingCoins(userIdParam, buildingIdentifier) {
+    try {
+        let user = await User.findOne({ userId: userIdParam });
+
+        if (!user) throw new Error('User not found (यूज़र नहीं मिला)');
+
+        const buildingIndex = parseInt(buildingIdentifier);
+        let building = user.buildings.find(b => b.index === buildingIndex);
+
+        if (!building) throw new Error('Building not found inside user data (यूज़र की बिल्डिंग डेटा में नहीं मिली)');
+
+        const currentTime = new Date();
+        const lastCollectionTime = building.last_collected || user.logout_time;
+        const timeDifference = (currentTime - lastCollectionTime) / (1000 * 60 * 60); // in hours
+
+        let baseGoldGenerated = 0;
+
+        if (building.creatures && building.creatures.length > 0) {
+            for (let creatureEntry of building.creatures) {
+                const creature = await Creature.findById(creatureEntry.creature_id); // we still need creature details
+                if (creature) {
+                    const count = creatureEntry.count || 1;
+                    baseGoldGenerated += creature.gold_coins * count * timeDifference;
+                }
+            }
+        } else {
+            baseGoldGenerated = building.gold_coins * timeDifference;
+        }
+
+        const reserveCoins = parseFloat(building.reserveCoins || 0);
+        const addedGold = baseGoldGenerated + reserveCoins;
+
+        // Update building data
+        building.last_collected = currentTime;
+        building.reserveCoins = 0; // Reset reserveCoins after collection
+
+        user.gold_coins += addedGold;
+
+        await user.save();
+
+        return {
+            success: true,
+            message: 'Coins collected successfully (सिक्के सफलतापूर्वक इकट्ठे किए गए)',
+            totalCoins: user.gold_coins.toFixed(2),
+            baseGoldAmount: baseGoldGenerated.toFixed(2),
+            reserveCoins: reserveCoins.toFixed(2),
+            addedGold: addedGold.toFixed(2),
+            buildingIndex,
+            last_collected: currentTime
+        };
+    } catch (error) {
+        throw new Error(`Error collecting building coins: ${error.message}`);
+    }
+}
+
+
+async function deleteCreatureFromBuilding(userIdParam, buildingIndexParam, creatureIdParam) {
+    try {
+        const user = await User.findOne({ userId: userIdParam });
+        if (!user) throw new Error('User not found');
+
+        const buildingIndex = parseInt(buildingIndexParam);
+
+        // Find the building by index
+        const building = user.buildings.find(b => b.index === buildingIndex);
+        if (!building) throw new Error('Building not found for this user');
+
+        // Try to delete from building-level creatures array (preferred)
+        if (Array.isArray(building.creatures)) {
+            const creatureIndex = building.creatures.findIndex(c =>
+                c.creature_id?.toString() === creatureIdParam &&
+                c.building_index === buildingIndex
+            );
+
+            if (creatureIndex !== -1) {
+                building.creatures.splice(creatureIndex, 1);
+                await user.save();
+                return {
+                    source: 'building',
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    remainingCreatures: building.creatures.length
+                };
+            }
+        }
+
+        // Fallback: check user-level creatures array (if that's where they are)
+        if (Array.isArray(user.creatures)) {
+            const creatureIndex = user.creatures.findIndex(c =>
+                c.creature_id?.toString() === creatureIdParam &&
+                c.building_index === buildingIndex
+            );
+
+            if (creatureIndex !== -1) {
+                user.creatures.splice(creatureIndex, 1);
+                await user.save();
+                return {
+                    source: 'user',
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    remainingUserLevelCreatures: user.creatures.length
+                };
+            }
+        }
+
+        throw new Error('Creature not found in this building');
+
+    } catch (error) {
+        throw new Error(`Error deleting creature from building: ${error.message}`);
+    }
+}
+
+
+
+
+
+
+async function deleteBuildingFromUser(userIdParam, buildingIndexParam) {
+    try {
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user) throw new Error('User not found');
+
+        const buildingIndex = parseInt(buildingIndexParam);
+        const building = user.buildings.find(b => b.index === buildingIndex);
+        if (!building) throw new Error('Building not found for this user');
+
+        user.buildings = user.buildings.filter(b => b.index !== buildingIndex);
+        user.creatures = user.creatures.filter(c => c.building_index !== buildingIndex);
+
+        await user.save();
+
+        return {
+            message: 'Building and associated creatures deleted successfully',
+            remainingBuildings: user.buildings.length,
+            remainingCreatures: user.creatures.length
+        };
+    } catch (error) {
+        throw new Error(`Error deleting building from user: ${error.message}`);
     }
 }
 
@@ -991,5 +1167,8 @@ module.exports = {
     updateBuildingCreatureLevel,
     getBuildingCreatures,
     getUserBuildings,
-    updateBuildingPosition
+    updateBuildingPosition,
+    collectBuildingCoins,
+    deleteCreatureFromBuilding,
+    deleteBuildingFromUser
 };
