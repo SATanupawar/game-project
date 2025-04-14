@@ -31,20 +31,35 @@ const userSchema = new mongoose.Schema({
             y: Number
         },
         index: Number,
+        reserveCoins: {
+            type: Number,
+            default: 0
+        },
         last_collected: {
             type: Date,
             default: Date.now
-        }
+        },
+        creatures: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Creature'
+        }]
     }],
     creatures: [{
         creature_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Creature'
         },
-        building_index: Number, // Reference to the building's index
-        count: {
+        name: {
+            type: String,
+            required: true
+        },
+        level: {
             type: Number,
             default: 1
+        },
+        building_index: {
+            type: Number,
+            required: true
         }
     }],
     logout_time: {
@@ -52,7 +67,9 @@ const userSchema = new mongoose.Schema({
         default: Date.now
     }
 }, {
-    timestamps: true
+    timestamps: true,
+    // Allow fields not specified in the schema
+    strict: false
 });
 
 module.exports = mongoose.model('User', userSchema);

@@ -1,15 +1,39 @@
 const mongoose = require('mongoose');
 const Creature = require('../models/creature');
-const CreatureLevel = require('../models/creature_level');
 
 /**
  * Get all creatures
- * @returns {Promise<Array>} Array of creatures
+ * @returns {Promise<Array>} Array of creatures with their level stats
  */
 const getAllCreatures = async () => {
     try {
-        const creatures = await Creature.find().populate('level');
-        return creatures;
+        const creatures = await Creature.find();
+        return creatures.map(creature => {
+            const stats = creature.getCurrentStats();
+            // Sort level stats by level for consistent order
+            const sortedLevelStats = [...creature.level_stats].sort((a, b) => a.level - b.level);
+            
+            return {
+                _id: creature._id,
+                creature_Id: creature.creature_Id,
+                name: creature.name,
+                type: creature.type,
+                level: creature.level,
+                gold_coins: creature.gold_coins,
+                base_attack: creature.base_attack,
+                base_health: creature.base_health,
+                attack: stats.attack,
+                health: stats.health,
+                speed: stats.speed,
+                armor: stats.armor,
+                critical_health: stats.critical_health,
+                critical_damage: stats.critical_damage,
+                image: creature.image,
+                description: creature.description,
+                // Include all level stats
+                level_stats: sortedLevelStats
+            };
+        });
     } catch (error) {
         throw new Error(`Error fetching creatures: ${error.message}`);
     }
@@ -25,29 +49,49 @@ const getCreatureById = async (creatureId) => {
         let creature = null;
         
         // Try to find by creature_Id first
-        creature = await Creature.findOne({ creature_Id: creatureId }).populate('level');
+        creature = await Creature.findOne({ creature_Id: creatureId });
         
         // If not found and valid ObjectId, try by _id
         if (!creature && mongoose.Types.ObjectId.isValid(creatureId)) {
-            creature = await Creature.findById(creatureId).populate('level');
+            creature = await Creature.findById(creatureId);
         }
 
         if (!creature) {
             throw new Error('Creature not found');
         }
 
-        return creature;
+        // Get calculated stats for current level
+        const stats = creature.getCurrentStats();
+
+        return {
+            _id: creature._id,
+            creature_Id: creature.creature_Id,
+            name: creature.name,
+            type: creature.type,
+            level: creature.level,
+            gold_coins: creature.gold_coins,
+            base_attack: creature.base_attack,
+            base_health: creature.base_health,
+            attack: stats.attack,
+            health: stats.health,
+            speed: stats.speed,
+            armor: stats.armor,
+            critical_health: stats.critical_health,
+            critical_damage: stats.critical_damage,
+            image: creature.image,
+            description: creature.description
+        };
     } catch (error) {
         throw new Error(`Error fetching creature: ${error.message}`);
     }
 };
 
 /**
- * Get all levels for a specific creature
+ * Get creature stats for all levels
  * @param {string} creatureId - Creature ID
- * @returns {Promise<Object>} Object containing creature and levels
+ * @returns {Promise<Object>} Object containing stats for all levels
  */
-const getCreatureLevels = async (creatureId) => {
+const getCreatureStats = async (creatureId) => {
     try {
         let creature = null;
         
@@ -63,20 +107,19 @@ const getCreatureLevels = async (creatureId) => {
             throw new Error('Creature not found');
         }
 
-        const levels = await CreatureLevel.find({ creature_Id: creature.creature_Id })
-            .sort({ level: 1 });
-
+        // Return all level stats
         return {
             creature: {
                 creature_Id: creature.creature_Id,
                 name: creature.name,
                 type: creature.type,
-                image: creature.image
+                image: creature.image,
+                current_level: creature.level
             },
-            levels: levels
+            stats: creature.level_stats.sort((a, b) => a.level - b.level)
         };
     } catch (error) {
-        throw new Error(`Error fetching creature levels: ${error.message}`);
+        throw new Error(`Error fetching creature stats: ${error.message}`);
     }
 };
 
@@ -107,36 +150,33 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
             throw new Error('Level must be between 1 and 40');
         }
 
-        // Find the requested level
-        const newLevel = await CreatureLevel.findOne({
-            creature_Id: creature.creature_Id,
-            level: levelNumber
-        });
-
-        if (!newLevel) {
-            throw new Error(`Level ${levelNumber} not found for this creature`);
-        }
-
         // Store the previous level
-        const previousLevel = creature.levelNumber;
+        const previousLevel = creature.level;
 
         // Update the creature's level
-        creature.level = newLevel._id;
-        creature.levelNumber = levelNumber;
+        if (!creature.setLevel(levelNumber)) {
+            throw new Error(`Level ${levelNumber} stats not found for this creature`);
+        }
+
+        // Save the creature
         await creature.save();
+
+        // Get updated stats
+        const newStats = creature.getCurrentStats();
 
         return {
             creature: {
                 creature_Id: creature.creature_Id,
                 name: creature.name,
+                type: creature.type,
                 previousLevel: previousLevel,
                 newLevel: levelNumber,
-                attack: newLevel.attack,
-                health: newLevel.health,
-                speed: newLevel.speed,
-                armor: newLevel.armor,
-                critical_health: newLevel.critical_health,
-                critical_damage: newLevel.critical_damage
+                attack: newStats.attack,
+                health: newStats.health,
+                speed: newStats.speed,
+                armor: newStats.armor,
+                critical_health: newStats.critical_health,
+                critical_damage: newStats.critical_damage
             }
         };
     } catch (error) {
@@ -144,9 +184,48 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
     }
 };
 
+/**
+ * Create a new creature with pre-calculated level stats
+ * @param {Object} creatureData - Creature data
+ * @returns {Promise<Object>} Created creature
+ */
+const createCreature = async (creatureData) => {
+    try {
+        // Create the creature (level stats will be auto-generated in pre-save hook)
+        const creature = new Creature(creatureData);
+        await creature.save();
+        
+        // Get current stats
+        const stats = creature.getCurrentStats();
+        
+        return {
+            _id: creature._id,
+            creature_Id: creature.creature_Id,
+            name: creature.name,
+            type: creature.type,
+            level: creature.level,
+            gold_coins: creature.gold_coins,
+            base_attack: creature.base_attack,
+            base_health: creature.base_health,
+            attack: stats.attack,
+            health: stats.health,
+            speed: stats.speed,
+            armor: stats.armor,
+            critical_health: stats.critical_health,
+            critical_damage: stats.critical_damage,
+            image: creature.image,
+            description: creature.description,
+            level_stats_count: creature.level_stats.length
+        };
+    } catch (error) {
+        throw new Error(`Error creating creature: ${error.message}`);
+    }
+};
+
 module.exports = {
     getAllCreatures,
     getCreatureById,
-    getCreatureLevels,
-    updateCreatureLevel
+    getCreatureStats,
+    updateCreatureLevel,
+    createCreature
 };

@@ -3,8 +3,9 @@ const router = express.Router();
 const { 
     getAllCreatures,
     getCreatureById,
-    getCreatureLevels,
-    updateCreatureLevel
+    getCreatureStats,
+    updateCreatureLevel,
+    createCreature
 } = require('../service/creatureService');
 
 // Get all creatures
@@ -48,13 +49,13 @@ router.get('/:creatureId', async (req, res) => {
     }
 });
 
-// Get creature levels
-router.get('/:creatureId/levels', async (req, res) => {
+// Get creature stats for all levels
+router.get('/:creatureId/stats', async (req, res) => {
     try {
-        const result = await getCreatureLevels(req.params.creatureId);
+        const result = await getCreatureStats(req.params.creatureId);
         res.status(200).json({
             success: true,
-            message: 'Creature levels fetched successfully',
+            message: 'Creature stats fetched successfully',
             data: result
         });
     } catch (error) {
@@ -103,6 +104,44 @@ router.put('/:creatureId/level/:levelNumber', async (req, res) => {
                 message: error.message 
             });
         }
+    }
+});
+
+// Create a new creature
+router.post('/', async (req, res) => {
+    try {
+        // Validate required fields
+        const requiredFields = ['creature_Id', 'name', 'type', 'rarity', 'base_attack', 'base_health', 'gold_coins', 'description', 'image'];
+        
+        for (const field of requiredFields) {
+            if (!req.body[field]) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Missing required field: ${field}`
+                });
+            }
+        }
+        
+        // Validate rarity
+        const validRarities = ['common', 'rare', 'epic', 'legendary'];
+        if (!validRarities.includes(req.body.rarity)) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid rarity. Must be one of: ${validRarities.join(', ')}`
+            });
+        }
+        
+        const creature = await createCreature(req.body);
+        res.status(201).json({
+            success: true,
+            message: 'Creature created successfully',
+            data: creature
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
     }
 });
 
