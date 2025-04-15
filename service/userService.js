@@ -113,6 +113,7 @@ async function getUserWithDetails(userIdParam) {
             gold_coins: user.gold_coins,
             buildings: processedBuildings,
             creatures: processedCreatures,
+            battle_selected_creatures: user.battle_selected_creatures || [],
             logout_time: user.logout_time,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
@@ -817,7 +818,7 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
             attack += Math.round(attack * attackGrowth);
             health += Math.round(health * healthGrowth);
         }
-
+        
         // Create the complete creature response
         const creatureResponse = {
             _id: creatureId,
@@ -1828,6 +1829,236 @@ async function getCreatureLocations(userIdParam, creatureIds) {
     }
 }
 
+// Update battle selected creatures for a user
+async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], removeCreatures = []) {
+    try {
+        console.log(`Updating battle selected creatures for user ${userIdParam}`);
+        console.log(`Adding: ${JSON.stringify(addCreatures)}`);
+        console.log(`Removing: ${JSON.stringify(removeCreatures)}`);
+
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Fix battle_selected_creatures if it's not an array
+        if (!Array.isArray(user.battle_selected_creatures)) {
+            console.log('Fixing corrupted battle_selected_creatures field');
+            user.battle_selected_creatures = [];
+            await user.save();
+        }
+
+        // Track changes
+        let addedCount = 0;
+        let removedCount = 0;
+        const addedCreatures = [];
+        const removedCreatures = [];
+
+        // Handle removing creatures
+        if (removeCreatures && removeCreatures.length > 0) {
+            for (const creatureId of removeCreatures) {
+                console.log(`Trying to remove creature with ID: ${creatureId}`);
+                
+                // Find the creature in battle_selected_creatures
+                const index = user.battle_selected_creatures.findIndex(
+                    c => (c.creature_id && c.creature_id.toString() === creatureId.toString())
+                );
+                
+                console.log(`Found creature at index: ${index}`);
+                
+                if (index !== -1) {
+                    const removed = user.battle_selected_creatures.splice(index, 1)[0];
+                    removedCount++;
+                    console.log(`Removed creature: ${removed.name}`);
+                    
+                    removedCreatures.push({
+                        _id: removed.creature_id,
+                        name: removed.name,
+                        level: removed.level,
+                        position: removed.position
+                    });
+                } else {
+                    console.log(`Creature ${creatureId} not found in battle selection`);
+                }
+            }
+        }
+
+        // Handle adding creatures
+        if (addCreatures && addCreatures.length > 0) {
+            // Check if we'd exceed the maximum of 6 creatures
+            const projectedCount = user.battle_selected_creatures.length + addCreatures.length;
+            if (projectedCount > 6) {
+                throw new Error(`Cannot exceed maximum of 6 battle creatures (current: ${user.battle_selected_creatures.length}, trying to add: ${addCreatures.length})`);
+            }
+
+            for (const creatureId of addCreatures) {
+                console.log(`Adding creature with ID: ${creatureId}`);
+                
+                // Skip if already in battle selection
+                if (user.battle_selected_creatures.some(c => 
+                    c.creature_id && c.creature_id.toString() === creatureId.toString()
+                )) {
+                    console.log(`Creature ${creatureId} already in battle selection, skipping`);
+                    continue;
+                }
+
+                // Find the creature in user's creatures - check both _id and creature_id fields
+                const userCreature = user.creatures.find(c => 
+                    (c._id && c._id.toString() === creatureId.toString()) || 
+                    (c.creature_id && c.creature_id.toString() === creatureId.toString())
+                );
+
+                if (!userCreature) {
+                    console.warn(`Creature ${creatureId} not found in user's creatures array`);
+                    console.log('Available creatures:', JSON.stringify(user.creatures.map(c => ({ 
+                        _id: c._id?.toString(), 
+                        creature_id: c.creature_id?.toString(),
+                        name: c.name
+                    }))));
+                    continue;
+                }
+                
+                console.log(`Found user creature:`, userCreature);
+
+                // Get the actual creature ID to use for database lookup
+                const actualCreatureId = userCreature.creature_id || userCreature._id;
+                console.log(`Using creature ID ${actualCreatureId} for lookup`);
+
+                // Get full creature details from database
+                let creatureDetails;
+                try {
+                    creatureDetails = await Creature.findById(actualCreatureId);
+                } catch (err) {
+                    console.error(`Error looking up creature by ID ${actualCreatureId}:`, err);
+                }
+
+                if (!creatureDetails) {
+                    console.warn(`Creature ${actualCreatureId} not found in database`);
+                    
+                    // Try fallback to find by name
+                    try {
+                        creatureDetails = await Creature.findOne({ 
+                            name: { $regex: new RegExp('^' + userCreature.name + '$', 'i') }
+                        });
+                    } catch (err) {
+                        console.error(`Error looking up creature by name ${userCreature.name}:`, err);
+                    }
+
+                    if (!creatureDetails) {
+                        console.warn(`Could not find creature template for ${userCreature.name}`);
+                        continue;
+                    }
+                    
+                    console.log(`Found creature by name: ${creatureDetails.name}`);
+                }
+
+                // Calculate attack and health based on level
+                let attack = creatureDetails?.base_attack || 40;
+                let health = creatureDetails?.base_health || 280;
+                let creatureType = creatureDetails?.type || 'common';
+                
+                // Apply level multipliers based on type
+                let attackGrowth = 0.03; // Default 3% growth
+                let healthGrowth = 0.03; // Default 3% growth
+                
+                if (creatureType) {
+                    switch(creatureType.toLowerCase()) {
+                        case 'legendary':
+                            attackGrowth = 0.04;
+                            healthGrowth = 0.04;
+                            break;
+                        case 'elite':
+                            attackGrowth = 0.05;
+                            healthGrowth = 0.05;
+                            break;
+                        case 'epic':
+                            attackGrowth = 0.04;
+                            healthGrowth = 0.04;
+                            break;
+                    }
+                }
+                
+                // Calculate stats with compounding growth
+                for (let level = 1; level < (userCreature.level || 1); level++) {
+                    attack += Math.round(attack * attackGrowth);
+                    health += Math.round(health * healthGrowth);
+                }
+
+                // Assign position (next available slot)
+                const positions = user.battle_selected_creatures.map(c => c.position);
+                let position = 0;
+                while (positions.includes(position) && position < 6) {
+                    position++;
+                }
+
+                // Create the battle creature entry
+                const battleCreature = {
+                    creature_id: mongoose.Types.ObjectId.isValid(creatureId) ? 
+                        new mongoose.Types.ObjectId(creatureId) : creatureId,
+                    name: userCreature.name || 'Unknown Creature',
+                    level: userCreature.level || 1,
+                    type: creatureType,
+                    attack: attack,
+                    health: health,
+                    position: position
+                };
+
+                console.log('Created battle creature entry:', battleCreature);
+
+                // Add to battle selection
+                user.battle_selected_creatures.push(battleCreature);
+                user.markModified('battle_selected_creatures');
+                addedCount++;
+                addedCreatures.push({
+                    _id: creatureId,
+                    name: battleCreature.name,
+                    level: battleCreature.level,
+                    position: battleCreature.position,
+                    type: battleCreature.type,
+                    attack: battleCreature.attack,
+                    health: battleCreature.health
+                });
+            }
+        }
+
+        // Sort by position
+        user.battle_selected_creatures.sort((a, b) => a.position - b.position);
+
+        // Save changes
+        await user.save();
+        console.log('Saved user with updated battle selected creatures');
+
+        return {
+            success: true,
+            message: `Updated battle selection: added ${addedCount}, removed ${removedCount}`,
+            data: {
+                battle_selected_creatures: user.battle_selected_creatures.map(c => ({
+                    _id: c.creature_id,
+                    name: c.name,
+                    level: c.level,
+                    position: c.position,
+                    type: c.type,
+                    attack: c.attack,
+                    health: c.health
+                })),
+                added: addedCreatures,
+                removed: removedCreatures,
+                count: user.battle_selected_creatures.length
+            }
+        };
+    } catch (error) {
+        console.error('Error in updateBattleSelectedCreatures:', error);
+        return {
+            success: false,
+            message: `Error updating battle selected creatures: ${error.message}`
+        };
+    }
+}
+
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -1844,5 +2075,6 @@ module.exports = {
     deleteBuildingFromUser,
     getTotalCreaturesForUser,
     getCreatureLocations,
-    updateReserveCoins
+    updateReserveCoins,
+    updateBattleSelectedCreatures
 };

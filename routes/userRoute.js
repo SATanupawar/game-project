@@ -15,7 +15,8 @@ const {
     deleteCreatureFromBuilding,
     deleteBuildingFromUser,
     getTotalCreaturesForUser,
-    updateReserveCoins
+    updateReserveCoins,
+    updateBattleSelectedCreatures
 } = require('../service/userService');
 const mongoose = require('mongoose');
 
@@ -148,6 +149,17 @@ router.get('/:userId', async (req, res) => {
             gold_coins: user.gold_coins,
             buildings: processedBuildings,
             creatures: processedCreatures,
+            battle_selected_creatures: Array.isArray(user.battle_selected_creatures) 
+                ? user.battle_selected_creatures.map(c => ({
+                    _id: c.creature_id,
+                    name: c.name,
+                    level: c.level,
+                    position: c.position,
+                    type: c.type,
+                    attack: c.attack,
+                    health: c.health
+                }))
+                : [],
             logout_time: user.logout_time,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
@@ -2038,6 +2050,114 @@ router.get('/:userId/buildings/:buildingIndex/details', async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message
+        });
+    }
+});
+
+// Update battle selected creatures
+router.post('/:userId/battle-creatures', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { addCreatures, removeCreatures } = req.body;
+        
+        console.log('Updating battle creatures for user', userId);
+        console.log('Request body:', req.body);
+        
+        // Validate the input - both are optional but at least one should be provided
+        if ((!addCreatures || !addCreatures.length) && (!removeCreatures || !removeCreatures.length)) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one of addCreatures or removeCreatures must be provided'
+            });
+        }
+        
+        // Find the user first to check current battle selection size
+        const User = require('../models/user');
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Reset battle_selected_creatures if it has errors or isn't an array
+        if (!Array.isArray(user.battle_selected_creatures)) {
+            console.warn('User battle_selected_creatures is not an array or has errors, resetting it');
+            user.battle_selected_creatures = [];
+            await user.save();
+        }
+        
+        // Call the service function to update battle selected creatures
+        const result = await updateBattleSelectedCreatures(
+            userId, 
+            addCreatures || [], 
+            removeCreatures || []
+        );
+        
+        // Return appropriate status based on result
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error updating battle creatures:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating battle creatures',
+            error: error.message
+        });
+    }
+});
+
+// Get battle selected creatures
+router.get('/:userId/battle-creatures', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Find user
+        const User = require('../models/user');
+        let user = await User.findOne({ userId });
+        
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Initialize battle_selected_creatures if it doesn't exist
+        if (!user.battle_selected_creatures) {
+            user.battle_selected_creatures = [];
+            await user.save();
+        }
+        
+        // Format and return the battle creatures
+        const battleCreatures = user.battle_selected_creatures.map(c => ({
+            _id: c.creature_id,
+            name: c.name,
+            level: c.level,
+            position: c.position,
+            type: c.type,
+            attack: c.attack,
+            health: c.health
+        }));
+        
+        res.status(200).json({
+            success: true,
+            message: 'Battle selected creatures fetched successfully',
+            data: {
+                battle_selected_creatures: battleCreatures,
+                count: battleCreatures.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching battle creatures:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching battle creatures',
+            error: error.message
         });
     }
 });

@@ -1,5 +1,19 @@
 const mongoose = require('mongoose');
 
+// Define schemas for nested objects
+const battleCreatureSchema = new mongoose.Schema({
+    creature_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Creature'
+    },
+    name: String,
+    level: Number,
+    type: String,
+    attack: Number,
+    health: Number,
+    position: Number // Position in battle (0-5), max 6 creatures allowed
+}, { _id: false }); // Disable _id for embedded documents
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -62,6 +76,7 @@ const userSchema = new mongoose.Schema({
             required: true
         }
     }],
+    battle_selected_creatures: [battleCreatureSchema],
     logout_time: {
         type: Date,
         default: Date.now
