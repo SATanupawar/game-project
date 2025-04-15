@@ -717,6 +717,74 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
             }
         }
 
+        // Check if a creature of the same type/name already exists in this building
+        const creatureName = creatureData.name || (creatureTemplate?.name) || 'dragon';
+        const creatureType = creatureData.creature_type || (creatureTemplate?.creature_Id) || 'dragon';
+        
+        // Get all creatures in this building
+        const buildingCreatures = user.creatures.filter(c => c.building_index === effectiveBuildingIndex);
+        console.log('Existing creatures in building:', buildingCreatures);
+        
+        // Check if there are any existing creatures in the building
+        if (buildingCreatures.length > 0) {
+            // Get the type of the first creature in the building (assuming all are the same)
+            const existingType = buildingCreatures[0].creature_type?.toLowerCase() || 
+                               buildingCreatures[0].name?.toLowerCase();
+                
+            console.log(`Building already has creatures of type: ${existingType}`);
+            
+            // Check if new creature matches the existing type in the building
+            const newCreatureType = creatureType.toLowerCase();
+            const newCreatureName = creatureName.toLowerCase();
+            
+            if (existingType && (newCreatureType !== existingType && newCreatureName !== existingType)) {
+                console.log(`Cannot add ${newCreatureName}/${newCreatureType} to building that already has ${existingType}`);
+                
+                // Find the first creature to return its details
+                const firstExistingCreature = buildingCreatures[0];
+                
+                return {
+                    success: false,
+                    message: `This building already contains "${firstExistingCreature.name}" creatures. Only "${firstExistingCreature.name}" creatures can be added to this building.`,
+                    data: {
+                        existing_creature: {
+                            _id: firstExistingCreature._id || firstExistingCreature.creature_id,
+                            name: firstExistingCreature.name,
+                            level: firstExistingCreature.level,
+                            building_index: effectiveBuildingIndex,
+                            type: firstExistingCreature.type
+                        }
+                    }
+                };
+            }
+            
+            // Check for duplicate creature with same name/type
+            const existingCreature = buildingCreatures.find(c => 
+                c.name?.toLowerCase() === creatureName.toLowerCase() ||
+                c.creature_type?.toLowerCase() === creatureType.toLowerCase()
+            );
+
+            if (existingCreature) {
+                console.log('Found existing creature of the same type in building:', existingCreature);
+                
+                // Use the existing creature
+                return {
+                    success: true,
+                    message: `Creature ${creatureName} already exists in this building. Only one creature of each type is allowed.`,
+                    data: {
+                        creature: {
+                            _id: existingCreature._id || existingCreature.creature_id,
+                            name: existingCreature.name,
+                            level: existingCreature.level,
+                            building_index: effectiveBuildingIndex,
+                            type: existingCreature.type,
+                            already_exists: true
+                        }
+                    }
+                };
+            }
+        }
+
         let newCreature;
         let creatureId;
 
@@ -770,7 +838,8 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
             creature_id: creatureId,
             name: newCreature.name,
             level: newCreature.level || 1,
-            building_index: effectiveBuildingIndex
+            building_index: effectiveBuildingIndex,
+            creature_type: newCreature.creature_Id
         };
 
         // Validate required fields
