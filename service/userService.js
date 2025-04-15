@@ -2059,6 +2059,190 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
     }
 }
 
+// Merge two creatures to create a higher level creature
+async function mergeCreatures(userIdParam, creatureIds) {
+    try {
+        console.log(`Merging creatures for user ${userIdParam}`, creatureIds);
+        
+        // Validate input
+        if (!creatureIds || !Array.isArray(creatureIds) || creatureIds.length !== 2) {
+            throw new Error('Exactly two creature IDs must be provided for merging');
+        }
+        
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Initialize creatures array if it doesn't exist
+        if (!user.creatures || !Array.isArray(user.creatures)) {
+            throw new Error('User has no creatures');
+        }
+
+        // Find the two creatures to merge
+        const creaturesToMerge = [];
+        
+        for (const creatureId of creatureIds) {
+            // Find creature by _id or creature_id
+            const userCreature = user.creatures.find(c => 
+                (c._id && c._id.toString() === creatureId.toString()) || 
+                (c.creature_id && c.creature_id.toString() === creatureId.toString())
+            );
+
+            if (!userCreature) {
+                throw new Error(`Creature ${creatureId} not found in user's creatures`);
+            }
+            
+            creaturesToMerge.push(userCreature);
+        }
+        
+        // Check if both creatures have the same name
+        if (creaturesToMerge[0].name.toLowerCase() !== creaturesToMerge[1].name.toLowerCase()) {
+            throw new Error(`Cannot merge creatures of different types: ${creaturesToMerge[0].name} and ${creaturesToMerge[1].name}`);
+        }
+        
+        // Check if both creatures have the same level
+        if (creaturesToMerge[0].level !== creaturesToMerge[1].level) {
+            throw new Error(`Cannot merge creatures of different levels: ${creaturesToMerge[0].level} and ${creaturesToMerge[1].level}`);
+        }
+        
+        // Check if the level is valid for merging (only 10, 20, or 30)
+        const validMergeLevels = [10, 20, 30];
+        const currentLevel = creaturesToMerge[0].level;
+        
+        if (!validMergeLevels.includes(currentLevel)) {
+            throw new Error(`Cannot merge creatures at level ${currentLevel}. Only creatures at levels 10, 20, or 30 can be merged.`);
+        }
+        
+        console.log(`Found creatures to merge:`, creaturesToMerge);
+        
+        // Get creature template for stats calculation
+        let creatureTemplate;
+        try {
+            creatureTemplate = await Creature.findOne({ 
+                name: { $regex: new RegExp('^' + creaturesToMerge[0].name + '$', 'i') }
+            });
+        } catch (err) {
+            console.warn('Error finding creature template:', err);
+        }
+        
+        if (!creatureTemplate) {
+            console.warn(`No template found for creature ${creaturesToMerge[0].name}, using base stats from existing creature`);
+        }
+        
+        // Create merged creature with level 11, 21, or 31 based on input level
+        const baseCreature = creaturesToMerge[0];
+        const newCreatureId = new mongoose.Types.ObjectId();
+        const newLevel = currentLevel + 1; // 10->11, 20->21, 30->31
+        
+        // Calculate new stats with a boost
+        const baseAttack = baseCreature.base_attack || creatureTemplate?.base_attack || 45;
+        const baseHealth = baseCreature.base_health || creatureTemplate?.base_health || 250;
+        
+        // Apply level multipliers based on type
+        let attackGrowth = 0.03; // Default 3% growth
+        let healthGrowth = 0.03; // Default 3% growth
+        const creatureType = baseCreature.type || creatureTemplate?.type || 'common';
+        
+        switch(creatureType.toLowerCase()) {
+            case 'legendary':
+                attackGrowth = 0.04;
+                healthGrowth = 0.04;
+                break;
+            case 'elite':
+                attackGrowth = 0.05;
+                healthGrowth = 0.05;
+                break;
+            case 'epic':
+                attackGrowth = 0.04;
+                healthGrowth = 0.04;
+                break;
+        }
+        
+        // Calculate stats for the new level
+        let newAttack = baseAttack;
+        let newHealth = baseHealth;
+        
+        for (let level = 1; level < newLevel; level++) {
+            newAttack += Math.round(newAttack * attackGrowth);
+            newHealth += Math.round(newHealth * healthGrowth);
+        }
+        
+        // Create merged creature with boosted stats (10% bonus for merging)
+        const mergeBonus = 1.1; // 10% bonus
+        const mergedCreature = {
+            _id: newCreatureId,
+            creature_id: newCreatureId,
+            name: baseCreature.name,
+            level: newLevel,
+            type: creatureType,
+            building_index: baseCreature.building_index, // Keep in the same building
+            base_attack: baseAttack,
+            base_health: baseHealth,
+            attack: Math.round(newAttack * mergeBonus), // Apply merge bonus
+            health: Math.round(newHealth * mergeBonus), // Apply merge bonus
+            gold_coins: baseCreature.gold_coins || creatureTemplate?.gold_coins || 50,
+            image: baseCreature.image || creatureTemplate?.image || 'dragon.png',
+            description: baseCreature.description || creatureTemplate?.description || 'A merged creature with enhanced powers'
+        };
+        
+        console.log('Created merged creature:', mergedCreature);
+        
+        // Remove the original creatures from user's creatures array
+        const originalIds = creatureIds.map(id => id.toString());
+        user.creatures = user.creatures.filter(c => {
+            const id = (c._id || c.creature_id).toString();
+            return !originalIds.includes(id);
+        });
+        
+        // Add the merged creature
+        user.creatures.push(mergedCreature);
+        
+        // Remove the original creatures from battle_selected_creatures if they exist there
+        if (user.battle_selected_creatures && Array.isArray(user.battle_selected_creatures)) {
+            user.battle_selected_creatures = user.battle_selected_creatures.filter(c => {
+                return !originalIds.includes(c.creature_id.toString());
+            });
+        }
+        
+        // Save changes
+        user.markModified('creatures');
+        user.markModified('battle_selected_creatures');
+        await user.save();
+        
+        return {
+            success: true,
+            message: 'Creatures merged successfully',
+            data: {
+                mergedCreature: {
+                    _id: mergedCreature._id,
+                    name: mergedCreature.name,
+                    level: mergedCreature.level,
+                    type: mergedCreature.type,
+                    attack: mergedCreature.attack,
+                    health: mergedCreature.health,
+                    building_index: mergedCreature.building_index
+                },
+                removedCreatures: creaturesToMerge.map(c => ({
+                    _id: c._id || c.creature_id,
+                    name: c.name,
+                    level: c.level
+                }))
+            }
+        };
+    } catch (error) {
+        console.error('Error in mergeCreatures:', error);
+        return {
+            success: false,
+            message: `Error merging creatures: ${error.message}`
+        };
+    }
+}
+
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -2076,5 +2260,6 @@ module.exports = {
     getTotalCreaturesForUser,
     getCreatureLocations,
     updateReserveCoins,
-    updateBattleSelectedCreatures
+    updateBattleSelectedCreatures,
+    mergeCreatures
 };

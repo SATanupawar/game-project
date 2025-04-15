@@ -16,7 +16,8 @@ const {
     deleteBuildingFromUser,
     getTotalCreaturesForUser,
     updateReserveCoins,
-    updateBattleSelectedCreatures
+    updateBattleSelectedCreatures,
+    mergeCreatures
 } = require('../service/userService');
 const mongoose = require('mongoose');
 
@@ -2157,6 +2158,42 @@ router.get('/:userId/battle-creatures', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching battle creatures',
+            error: error.message
+        });
+    }
+});
+
+// Merge creatures to create higher level creature
+router.post('/:userId/merge-creatures', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { creatureIds } = req.body;
+        
+        console.log(`Merging creatures for user ${userId}`);
+        console.log(`Creature IDs:`, creatureIds);
+        
+        // Validate the input
+        if (!creatureIds || !Array.isArray(creatureIds) || creatureIds.length !== 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'Exactly two creature IDs must be provided for merging'
+            });
+        }
+        
+        // Call the service function to merge creatures
+        const result = await mergeCreatures(userId, creatureIds);
+        
+        // Return appropriate status based on result
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error merging creatures:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error merging creatures',
             error: error.message
         });
     }
