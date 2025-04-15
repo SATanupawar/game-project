@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('./models/user');
 const Building = require('./models/building');
 const Creature = require('./models/creature');
+const Boost = require('./models/boost');
 
 // Function to display creature info with level stats
 async function displayCreatureInfo(creature) {
@@ -344,6 +345,66 @@ async function createCreaturesAndBuildings() {
     }
 }
 
+async function createBoosts() {
+    try {
+        // Check if boosts already exist
+        const boostCount = await Boost.countDocuments();
+        if (boostCount > 0) {
+            console.log('Boosts already exist in the database. Skipping boost creation.');
+            
+            // Display existing boosts
+            const existingBoosts = await Boost.find();
+            console.log('\nExisting boosts:');
+            console.log('ID | Name | Path');
+            console.log('---------------');
+            existingBoosts.forEach(boost => {
+                console.log(`${boost.boost_id} | ${boost.name} | ${boost.path}`);
+            });
+            return;
+        }
+        
+        // Create boost table with 17 boost types
+        const boostTypes = [
+            { boost_id: 'siphon', name: 'Siphon', path: '', description: 'Drains energy from opponents' },
+            { boost_id: 'mirror', name: 'Mirror', path: '', description: 'Reflects damage back to attacker' },
+            { boost_id: 'team_rejuvenation', name: 'Team Rejuvenation', path: '', description: 'Heals all team members' },
+            { boost_id: 'mix', name: 'Mix', path: '', description: 'Combines multiple effects into one' },
+            { boost_id: 'draconian', name: 'Draconian', path: '', description: 'Increases dragon-type creatures power' },
+            { boost_id: 'duplicate', name: 'Duplicate', path: '', description: 'Creates a temporary copy of a creature' },
+            { boost_id: 'vengeance', name: 'Vengeance', path: '', description: 'Increases power when health is low' },
+            { boost_id: 'terrorise', name: 'Terrorise', path: '', description: 'Reduces enemy attack power' },
+            { boost_id: 'quickness', name: 'Quickness', path: '', description: 'Increases speed temporarily' },
+            { boost_id: 'brutality', name: 'Brutality', path: '', description: 'Increases critical hit chance' },
+            { boost_id: 'snatch', name: 'Snatch', path: '', description: 'Steals a positive effect from enemy' },
+            { boost_id: 'shard', name: 'Shard', path: '', description: 'Creates a protective barrier' },
+            { boost_id: 'boon', name: 'Boon', path: '', description: 'Increases all stats temporarily' },
+            { boost_id: 'obliterate', name: 'Obliterate', path: '', description: 'Deals massive damage to a single target' },
+            { boost_id: 'corner', name: 'Corner', path: '', description: 'Traps enemy, preventing escape' },
+            { boost_id: 'indignation', name: 'Indignation', path: '', description: 'Increases damage when attacked' },
+            { boost_id: 'manipulate', name: 'Manipulate', path: '', description: 'Controls an enemy creature for one turn' }
+        ];
+
+        // Save boosts to database
+        const savedBoosts = [];
+        for (const boostData of boostTypes) {
+            const boost = new Boost(boostData);
+            await boost.save();
+            savedBoosts.push(boost);
+        }
+
+        console.log('\nCreated boost table:');
+        console.log('ID | Name | Path | Description');
+        console.log('---------------------------');
+        savedBoosts.forEach(boost => {
+            console.log(`${boost.boost_id} | ${boost.name} | ${boost.path} | ${boost.description}`);
+        });
+        
+        return savedBoosts;
+    } catch (error) {
+        console.error('Error creating boosts:', error);
+    }
+}
+
 async function main() {
     try {
         // Use the original MongoDB Atlas connection string
@@ -352,7 +413,13 @@ async function main() {
             useUnifiedTopology: true 
         });
         console.log('Connected to MongoDB Atlas');
+        
+        // Create creatures and buildings
         await createCreaturesAndBuildings();
+        
+        // Create boosts
+        await createBoosts();
+        
     } catch (error) {
         console.error('Error:', error);
     } finally {

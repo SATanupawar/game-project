@@ -17,7 +17,9 @@ const {
     getTotalCreaturesForUser,
     updateReserveCoins,
     updateBattleSelectedCreatures,
-    mergeCreatures
+    mergeCreatures,
+    addBoostToUser,
+    removeBoostFromUser
 } = require('../service/userService');
 const mongoose = require('mongoose');
 
@@ -159,6 +161,13 @@ router.get('/:userId', async (req, res) => {
                     type: c.type,
                     attack: c.attack,
                     health: c.health
+                }))
+                : [],
+            boosts: Array.isArray(user.boosts)
+                ? user.boosts.map(b => ({
+                    boost_id: b.boost_id,
+                    boost_name: b.boost_name,
+                    count: b.count
                 }))
                 : [],
             logout_time: user.logout_time,
@@ -2194,6 +2203,205 @@ router.post('/:userId/merge-creatures', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error merging creatures',
+            error: error.message
+        });
+    }
+});
+
+// Add a new API route for getting a user's boosts
+router.get('/:userId/boosts', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Get the User model
+        const User = require('../models/user');
+        const Boost = require('../models/boost');
+        
+        // Find user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Get all boosts if user has any
+        let userBoosts = [];
+        if (user.boosts && user.boosts.length > 0) {
+            // Get full boost details
+            userBoosts = await Promise.all(user.boosts.map(async userBoost => {
+                try {
+                    const boostDetails = await Boost.findById(userBoost.boost_id);
+                    
+                    return {
+                        boost_id: userBoost.boost_id,
+                        boost_name: userBoost.boost_name,
+                        count: userBoost.count,
+                        description: boostDetails?.description || '',
+                        path: boostDetails?.path || ''
+                    };
+                } catch (error) {
+                    console.error(`Error getting boost details for ${userBoost.boost_id}:`, error);
+                    return {
+                        boost_id: userBoost.boost_id,
+                        boost_name: userBoost.boost_name,
+                        count: userBoost.count
+                    };
+                }
+            }));
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "User boosts fetched successfully",
+            data: {
+                boosts: userBoosts,
+                count: userBoosts.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching user boosts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching user boosts',
+            error: error.message
+        });
+    }
+});
+
+// Add a boost to a user
+router.post('/:userId/boosts/:boostId', async (req, res) => {
+    try {
+        const { userId, boostId } = req.params;
+        
+        // Parse boostId to check if it includes a count parameter (e.g., "siphon=5")
+        let actualBoostId = boostId;
+        let count = 1;
+        
+        if (boostId.includes('=')) {
+            const parts = boostId.split('=');
+            actualBoostId = parts[0];
+            count = parseInt(parts[1], 10);
+            
+            if (isNaN(count) || count <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid count parameter. Count must be a positive number.'
+                });
+            }
+        }
+        
+        // Process the boost addition multiple times based on count
+        const results = [];
+        let finalResult = null;
+        
+        for (let i = 0; i < count; i++) {
+            const result = await addBoostToUser(userId, actualBoostId);
+            results.push(result);
+            finalResult = result; // Keep the last result
+        }
+        
+        // If we added multiple boosts, customize the response
+        if (count > 1) {
+            // Extract the final boost details from the last result
+            const finalBoost = finalResult.data.boost;
+            
+            res.status(200).json({
+                success: true,
+                message: `Added ${count} ${actualBoostId} boosts to user`,
+                data: {
+                    boost: finalBoost,
+                    operations_performed: count
+                }
+            });
+        } else {
+            // For single boost, return the standard response
+            if (finalResult.success) {
+                res.status(200).json(finalResult);
+            } else {
+                res.status(400).json(finalResult);
+            }
+        }
+    } catch (error) {
+        console.error('Error adding boost to user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error adding boost to user',
+            error: error.message
+        });
+    }
+});
+
+// Remove a boost from a user
+router.delete('/:userId/boosts/:boostId', async (req, res) => {
+    try {
+        const { userId, boostId } = req.params;
+        
+        // Parse boostId to check if it includes a count parameter (e.g., "siphon=5")
+        let actualBoostId = boostId;
+        let count = 1;
+        
+        if (boostId.includes('=')) {
+            const parts = boostId.split('=');
+            actualBoostId = parts[0];
+            count = parseInt(parts[1], 10);
+            
+            if (isNaN(count) || count <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid count parameter. Count must be a positive number.'
+                });
+            }
+        }
+        
+        // Process the boost removal multiple times based on count
+        const results = [];
+        let finalResult = null;
+        let removedCount = 0;
+        
+        for (let i = 0; i < count; i++) {
+            const result = await removeBoostFromUser(userId, actualBoostId);
+            
+            // If one removal fails, stop the process
+            if (!result.success) {
+                finalResult = result;
+                break;
+            }
+            
+            results.push(result);
+            finalResult = result; // Keep the last result
+            removedCount++;
+            
+            // If the boost was completely removed (not just decremented), stop the process
+            if (result.data.removed_boost) {
+                break;
+            }
+        }
+        
+        // If we removed multiple boosts, customize the response
+        if (count > 1 && removedCount > 0) {
+            res.status(200).json({
+                success: true,
+                message: `Removed ${removedCount} ${actualBoostId} boosts from user`,
+                data: {
+                    operations_performed: removedCount,
+                    final_state: finalResult.data
+                }
+            });
+        } else {
+            // For single boost or if we encountered an error, return the standard response
+            if (finalResult.success) {
+                res.status(200).json(finalResult);
+            } else {
+                res.status(400).json(finalResult);
+            }
+        }
+    } catch (error) {
+        console.error('Error removing boost from user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error removing boost from user',
             error: error.message
         });
     }

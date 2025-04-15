@@ -2,6 +2,7 @@ const User = require('../models/user');
 const Building = require('../models/building');
 const Creature = require('../models/creature');
 const mongoose = require('mongoose');
+const Boost = require('../models/boost');
 
 async function getUserWithDetails(userIdParam) {
     try {
@@ -2300,6 +2301,195 @@ async function mergeCreatures(userIdParam, creatureIds) {
     }
 }
 
+// Add a boost to a user
+async function addBoostToUser(userIdParam, boostIdParam) {
+    try {
+        console.log(`Adding boost ${boostIdParam} to user ${userIdParam}`);
+        
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Find boost
+        let boost;
+        if (mongoose.Types.ObjectId.isValid(boostIdParam)) {
+            // If it's a valid ObjectId, search by _id
+            boost = await Boost.findById(boostIdParam);
+        } else {
+            // Otherwise, search by boost_id string
+            boost = await Boost.findOne({ boost_id: boostIdParam });
+        }
+
+        if (!boost) {
+            throw new Error(`Boost ${boostIdParam} not found`);
+        }
+
+        // Initialize boosts array if it doesn't exist
+        if (!user.boosts) {
+            user.boosts = [];
+        }
+
+        // Check if user already has this boost
+        const existingBoostIndex = user.boosts.findIndex(b => 
+            (b.boost_id && b.boost_id.toString() === boost._id.toString())
+        );
+
+        if (existingBoostIndex !== -1) {
+            // User already has this boost, increment count
+            user.boosts[existingBoostIndex].count += 1;
+            
+            // Save user
+            user.markModified('boosts');
+            await user.save();
+            
+            // Return the existing boost with updated count
+            return {
+                success: true,
+                message: `Increased ${boost.name} boost count to ${user.boosts[existingBoostIndex].count}`,
+                data: {
+                    boost: {
+                        boost_id: user.boosts[existingBoostIndex].boost_id,
+                        boost_name: user.boosts[existingBoostIndex].boost_name,
+                        count: user.boosts[existingBoostIndex].count
+                    }
+                }
+            };
+        }
+
+        // Add boost to user
+        const userBoost = {
+            boost_id: boost._id,
+            boost_name: boost.name,
+            count: 1
+        };
+
+        user.boosts.push(userBoost);
+        user.markModified('boosts');
+        
+        // Save user
+        await user.save();
+
+        return {
+            success: true,
+            message: `Successfully added ${boost.name} boost to user`,
+            data: {
+                boost: {
+                    boost_id: userBoost.boost_id,
+                    boost_name: userBoost.boost_name,
+                    count: userBoost.count
+                }
+            }
+        };
+    } catch (error) {
+        console.error('Error in addBoostToUser:', error);
+        return {
+            success: false,
+            message: `Error adding boost to user: ${error.message}`
+        };
+    }
+}
+
+// Remove a boost from a user
+async function removeBoostFromUser(userIdParam, boostIdParam) {
+    try {
+        console.log(`Removing boost ${boostIdParam} from user ${userIdParam}`);
+        
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Check if user has any boosts
+        if (!user.boosts || user.boosts.length === 0) {
+            throw new Error('User has no boosts');
+        }
+
+        // Find the boost to remove
+        let boostObjectId;
+        if (mongoose.Types.ObjectId.isValid(boostIdParam)) {
+            // If it's a valid ObjectId, use it directly
+            boostObjectId = boostIdParam;
+        } else {
+            // Otherwise, look up the boost to get its ObjectId
+            const boost = await Boost.findOne({ boost_id: boostIdParam });
+            if (!boost) {
+                throw new Error(`Boost ${boostIdParam} not found`);
+            }
+            boostObjectId = boost._id;
+        }
+
+        // Find the index of the boost in the user's array
+        const boostIndex = user.boosts.findIndex(b => 
+            b.boost_id && b.boost_id.toString() === boostObjectId.toString()
+        );
+
+        if (boostIndex === -1) {
+            throw new Error(`User does not have boost ${boostIdParam}`);
+        }
+
+        // Store boost info before potentially removing
+        const boost = {
+            boost_id: user.boosts[boostIndex].boost_id,
+            boost_name: user.boosts[boostIndex].boost_name,
+            count: user.boosts[boostIndex].count
+        };
+
+        // Decrement count or remove if count reaches 0
+        if (user.boosts[boostIndex].count > 1) {
+            user.boosts[boostIndex].count -= 1;
+            user.markModified('boosts');
+            
+            // Save user
+            await user.save();
+            
+            return {
+                success: true,
+                message: `Decreased ${boost.boost_name} boost count to ${user.boosts[boostIndex].count}`,
+                data: {
+                    boost: {
+                        boost_id: user.boosts[boostIndex].boost_id,
+                        boost_name: user.boosts[boostIndex].boost_name,
+                        count: user.boosts[boostIndex].count
+                    }
+                }
+            };
+        } else {
+            // Remove the boost if count would reach 0
+            user.boosts.splice(boostIndex, 1);
+            user.markModified('boosts');
+            
+            // Save user
+            await user.save();
+            
+            return {
+                success: true,
+                message: `Successfully removed ${boost.boost_name} boost from user`,
+                data: {
+                    removed_boost: {
+                        boost_id: boost.boost_id,
+                        boost_name: boost.boost_name
+                    }
+                }
+            };
+        }
+    } catch (error) {
+        console.error('Error in removeBoostFromUser:', error);
+        return {
+            success: false,
+            message: `Error removing boost from user: ${error.message}`
+        };
+    }
+}
+
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -2318,5 +2508,7 @@ module.exports = {
     getCreatureLocations,
     updateReserveCoins,
     updateBattleSelectedCreatures,
-    mergeCreatures
+    mergeCreatures,
+    addBoostToUser,
+    removeBoostFromUser
 };

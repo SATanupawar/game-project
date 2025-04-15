@@ -14,6 +14,20 @@ const battleCreatureSchema = new mongoose.Schema({
     position: Number // Position in battle (0-5), max 6 creatures allowed
 }, { _id: false }); // Disable _id for embedded documents
 
+// Define schema for user boosts
+const userBoostSchema = new mongoose.Schema({
+    boost_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Boost'
+    },
+    boost_name: String,
+    count: {
+        type: Number,
+        default: 1,
+        min: 1
+    }
+}, { _id: false }); // Disable _id for embedded documents
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -77,6 +91,7 @@ const userSchema = new mongoose.Schema({
         }
     }],
     battle_selected_creatures: [battleCreatureSchema],
+    boosts: [userBoostSchema], // Array of boosts the user has obtained
     logout_time: {
         type: Date,
         default: Date.now
