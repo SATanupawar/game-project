@@ -565,13 +565,19 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             console.log('Added creature to user with building index:', randomIndex);
 
             // Add creature to response
+            const matchedDetails = await Creature.findOne({ 
+                name: newCreature.name,
+                level: newCreature.level 
+            }).lean();
+
             response.data.creature = {
                 _id: newCreature._id,
                 creature_Id: newCreature.creature_Id,
                 name: newCreature.name,
                 type: newCreature.type,
                 level: newCreature.levelNumber,
-                gold_coins: newCreature.gold_coins
+                gold_coins: newCreature.gold_coins,
+                ...matchedDetails
             };
             
             response.message = "Building and creature assigned successfully";
@@ -698,39 +704,71 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
         let creatureTemplate = null;
         if (creatureData.creature_type) {
             creatureTemplate = await Creature.findOne({ creature_Id: creatureData.creature_type });
+            if (!creatureTemplate) {
+                // Fallback to searching by name
+                creatureTemplate = await Creature.findOne({ 
+                    name: { $regex: new RegExp('^' + creatureData.name + '$', 'i') }
+                });
+            }
             console.log('Found creature template:', creatureTemplate);
             if (!creatureTemplate) {
                 throw new Error(`Creature template not found for type: ${creatureData.creature_type}`);
             }
         }
 
-        // Create new creature in database
-        const newCreature = new Creature({
-            creature_Id: creatureData.creature_type || (creatureTemplate?.creature_Id) || 'dragon',
-            name: creatureData.name || (creatureTemplate?.name) || 'Dragon',
-            type: creatureData.type || (creatureTemplate?.type) || 'common',
-            level: creatureData.level || 1,
-            base_attack: creatureData.base_attack || (creatureTemplate?.base_attack) || 45,
-            base_health: creatureData.base_health || (creatureTemplate?.base_health) || 250,
-            gold_coins: creatureData.gold_coins || (creatureTemplate?.gold_coins) || 50,
-            image: creatureData.image || (creatureTemplate?.image) || 'dragon.png',
-            description: creatureData.description || (creatureTemplate?.description) || 'A fierce fire-breathing dragon'
-        });
+        let newCreature;
+        let creatureId;
 
-        // Save the new creature
-        await newCreature.save();
-        console.log('New creature saved:', newCreature);
+        // Check if we should use existing template instead of creating a new entry
+        if (creatureData.useExistingTemplate && creatureTemplate) {
+            console.log('Using existing creature template without creating new entry');
+            
+            // Generate a unique ID for the user's creature reference
+            creatureId = new mongoose.Types.ObjectId();
+            
+            // Use template data directly
+            newCreature = {
+                _id: creatureId,
+                creature_Id: creatureTemplate.creature_Id,
+                name: creatureData.name || creatureTemplate.name,
+                type: creatureTemplate.type,
+                level: creatureData.level || 1,
+                base_attack: creatureTemplate.base_attack,
+                base_health: creatureTemplate.base_health,
+                gold_coins: creatureTemplate.gold_coins,
+                image: creatureTemplate.image,
+                description: creatureTemplate.description
+            };
+        } else {
+            // Create new creature in database (original behavior)
+            newCreature = new Creature({
+                creature_Id: creatureData.creature_type || (creatureTemplate?.creature_Id) || 'dragon',
+                name: creatureData.name || (creatureTemplate?.name) || 'Dragon',
+                type: creatureData.type || (creatureTemplate?.type) || 'common',
+                level: creatureData.level || 1,
+                base_attack: creatureData.base_attack || (creatureTemplate?.base_attack) || 45,
+                base_health: creatureData.base_health || (creatureTemplate?.base_health) || 250,
+                gold_coins: creatureData.gold_coins || (creatureTemplate?.gold_coins) || 50,
+                image: creatureData.image || (creatureTemplate?.image) || 'dragon.png',
+                description: creatureData.description || (creatureTemplate?.description) || 'A fierce fire-breathing dragon'
+            });
+
+            // Save the new creature
+            await newCreature.save();
+            console.log('New creature saved:', newCreature);
+            creatureId = newCreature._id;
+        }
 
         // Add creature reference to building's creatures array
-        if (!building.creatures.some(c => c.toString() === newCreature._id.toString())) {
-            building.creatures.push(newCreature._id);
+        if (!building.creatures.some(c => c.toString() === creatureId.toString())) {
+            building.creatures.push(creatureId);
         }
 
         // Create creature entry for user
         const userCreatureEntry = {
-            creature_id: newCreature._id,
+            creature_id: creatureId,
             name: newCreature.name,
-            level: newCreature.level,
+            level: newCreature.level || 1,
             building_index: effectiveBuildingIndex
         };
 
@@ -741,7 +779,7 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
 
         // Check if creature already exists in user's creatures array
         const existingCreatureIndex = user.creatures.findIndex(c => 
-            c.creature_id && c.creature_id.toString() === newCreature._id.toString() && 
+            c.creature_id && c.creature_id.toString() === creatureId.toString() && 
             c.building_index === effectiveBuildingIndex
         );
 
@@ -764,23 +802,51 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
         await user.save();
         console.log('User saved successfully with creatures:', user.creatures);
 
+        // Get the level stats for the creature's level
+        const levelStats = creatureTemplate?.level_stats?.find(stat => stat.level === newCreature.level);
+
+        // Calculate attack and health based on level
+        let attack = newCreature.base_attack || creatureTemplate?.base_attack || 45;
+        let health = newCreature.base_health || creatureTemplate?.base_health || 250;
+        
+        // Apply level multipliers
+        const attackGrowth = 0.03; // 3% growth per level
+        const healthGrowth = 0.03; // 3% growth per level
+        
+        for (let level = 1; level < (newCreature.level || 1); level++) {
+            attack += Math.round(attack * attackGrowth);
+            health += Math.round(health * healthGrowth);
+        }
+
+        // Create the complete creature response
+        const creatureResponse = {
+            _id: creatureId,
+            name: newCreature.name,
+            level: newCreature.level || 1,
+            building_index: effectiveBuildingIndex,
+            creature_Id: newCreature.creature_Id || creatureTemplate?.creature_Id,
+            type: newCreature.type || creatureTemplate?.type,
+            gold_coins: newCreature.gold_coins || creatureTemplate?.gold_coins,
+            description: newCreature.description || creatureTemplate?.description,
+            image: newCreature.image || creatureTemplate?.image,
+            base_attack: newCreature.base_attack || creatureTemplate?.base_attack,
+            base_health: newCreature.base_health || creatureTemplate?.base_health,
+            attack: attack,
+            health: health,
+            speed: levelStats?.speed || creatureTemplate?.speed,
+            armor: levelStats?.armor || creatureTemplate?.armor,
+            critical_health: levelStats?.critical_health || creatureTemplate?.critical_health,
+            critical_damage: levelStats?.critical_damage || creatureTemplate?.critical_damage
+        };
+
+        // Log the complete response for debugging
+        console.log('Complete creature response:', creatureResponse);
+
         return {
             success: true,
-            message: 'Creature added to building successfully',
+            message: 'Creature added successfully',
             data: {
-                building: {
-                    _id: building._id,
-                    buildingId: building.buildingId,
-                    name: building.name,
-                    index: building.index,
-                    creatures: building.creatures
-                },
-                creature: {
-                    _id: newCreature._id,
-                    name: userCreatureEntry.name,
-                    level: userCreatureEntry.level,
-                    building_index: userCreatureEntry.building_index
-                }
+                creature: creatureResponse
             }
         };
     } catch (error) {

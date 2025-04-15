@@ -273,81 +273,20 @@ router.post('/:userId/buildings/:buildingId/creatures/:creatureName', async (req
         const { userId, buildingId, creatureName } = req.params;
         console.log(`Adding creature ${creatureName} to building ${buildingId} for user ${userId}`);
 
-        // Get required models
-        const User = require('../models/user');
-        const mongoose = require('mongoose');
-
-        // Find user
-        const user = await User.findOne({ userId });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        // Find building
-        const building = user.buildings.find(b => b.index === parseInt(buildingId));
-        if (!building) {
-            return res.status(404).json({
-                success: false,
-                message: 'Building not found'
-            });
-        }
-
-        // Create new creature entry with basic info
-        const newCreature = {
-            _id: new mongoose.Types.ObjectId(),
+        // Prepare creature data
+        const creatureData = {
             name: creatureName,
+            creature_type: creatureName,
             level: req.body.level || 1,
-            building_index: parseInt(buildingId)
+            useExistingTemplate: true, // Flag to use existing template without creating new entry
+            ...req.body // Include any additional creature data from request body
         };
 
-        // Add creature to user's creatures array
-        user.creatures.push(newCreature);
-        await user.save();
+        // Use the service function to add the creature
+        const result = await addCreatureToBuilding(userId, buildingId, creatureData);
 
-        // Get the created creature with its ID
-        const createdCreature = user.creatures[user.creatures.length - 1];
-
-        // Now fetch complete creature info from creature table
-        const Creature = require('../models/creature');
-        const creatureTemplate = await Creature.findOne({ name: creatureName });
-
-        // Prepare response with complete creature info
-        const creatureResponse = {
-            _id: createdCreature._id,
-            name: creatureName,
-            level: newCreature.level,
-            building_index: newCreature.building_index
-        };
-
-        // Add template data if found
-        if (creatureTemplate) {
-            Object.assign(creatureResponse, {
-                type: creatureTemplate.type,
-                base_attack: creatureTemplate.base_attack,
-                base_health: creatureTemplate.base_health,
-                attack: creatureTemplate.base_attack,
-                health: creatureTemplate.base_health,
-                speed: creatureTemplate.speed,
-                armor: creatureTemplate.armor,
-                critical_health: creatureTemplate.critical_health,
-                critical_damage: creatureTemplate.critical_damage,
-                gold_coins: creatureTemplate.gold_coins,
-                image: creatureTemplate.image,
-                description: creatureTemplate.description
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Creature added successfully',
-            data: {
-                creature: creatureResponse
-            }
-        });
-
+        // Return the result
+        res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         console.error('Error adding creature:', error);
         res.status(500).json({
