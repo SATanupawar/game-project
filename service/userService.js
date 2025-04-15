@@ -767,21 +767,9 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
             if (existingCreature) {
                 console.log('Found existing creature of the same type in building:', existingCreature);
                 
-                // Use the existing creature
-                return {
-                    success: true,
-                    message: `Creature ${creatureName} already exists in this building. Only one creature of each type is allowed.`,
-                    data: {
-                        creature: {
-                            _id: existingCreature._id || existingCreature.creature_id,
-                            name: existingCreature.name,
-                            level: existingCreature.level,
-                            building_index: effectiveBuildingIndex,
-                            type: existingCreature.type,
-                            already_exists: true
-                        }
-                    }
-                };
+                // We're now allowing multiple creatures of the same type, so we don't return early
+                // Just log that we found an existing creature of the same type
+                console.log(`Building already has a ${existingCreature.name}, allowing addition of another one`);
             }
         }
 
