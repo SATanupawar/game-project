@@ -26,7 +26,7 @@ const getAllCreatures = async () => {
                 health: stats.health,
                 speed: stats.speed,
                 armor: stats.armor,
-                critical_health: stats.critical_health,
+                critical_damage_percentage: stats.critical_damage_percentage,
                 critical_damage: stats.critical_damage,
                 image: creature.image,
                 description: creature.description,
@@ -76,7 +76,7 @@ const getCreatureById = async (creatureId) => {
             health: stats.health,
             speed: stats.speed,
             armor: stats.armor,
-            critical_health: stats.critical_health,
+            critical_damage_percentage: stats.critical_damage_percentage,
             critical_damage: stats.critical_damage,
             image: creature.image,
             description: creature.description
@@ -175,7 +175,7 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
                 health: newStats.health,
                 speed: newStats.speed,
                 armor: newStats.armor,
-                critical_health: newStats.critical_health,
+                critical_damage_percentage: newStats.critical_damage_percentage,
                 critical_damage: newStats.critical_damage
             }
         };
@@ -211,7 +211,7 @@ const createCreature = async (creatureData) => {
             health: stats.health,
             speed: stats.speed,
             armor: stats.armor,
-            critical_health: stats.critical_health,
+            critical_damage_percentage: stats.critical_damage_percentage,
             critical_damage: stats.critical_damage,
             image: creature.image,
             description: creature.description,

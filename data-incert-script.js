@@ -24,6 +24,8 @@ async function displayCreatureInfo(creature) {
         base_health: populatedCreature.base_health,
         current_attack: stats.attack,
         current_health: stats.health,
+        critical_damage_percentage: populatedCreature.critical_damage_percentage || populatedCreature.critical_damage_percentage, // Use new name but fallback to old one
+        critical_damage: populatedCreature.critical_damage,
         total_levels: populatedCreature.level_stats.length,
         createdAt: populatedCreature.createdAt,
         updatedAt: populatedCreature.updatedAt
@@ -47,10 +49,17 @@ async function displayCreatureLevelStats(creatureId) {
         // Sort level stats by level
         const sortedStats = creature.level_stats.sort((a, b) => a.level - b.level);
         
-        // Display stats for each level
+        // Display stats for each level - only show level, attack and health
         for (const levelStat of sortedStats) {
             console.log(`Level ${levelStat.level}: Attack ${levelStat.attack}, Health ${levelStat.health}`);
         }
+        
+        // Display the static values only once
+        console.log('\nStatic values (same for all levels):');
+        console.log(`Speed: ${sortedStats[0].speed}`);
+        console.log(`Armor: ${sortedStats[0].armor}`);
+        console.log(`Critical Damage Percentage: ${sortedStats[0].critical_damage_percentage || sortedStats[0].critical_damage_percentage}`);
+        console.log(`Critical Damage: ${sortedStats[0].critical_damage}`);
     } catch (error) {
         console.error('Error displaying level stats:', error);
     }

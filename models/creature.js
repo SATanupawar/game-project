@@ -24,7 +24,7 @@ const levelStatsSchema = new mongoose.Schema({
         type: Number,
         default: 50
     },
-    critical_health: {
+    critical_damage_percentage: {
         type: Number,
         default: 50
     },
@@ -88,7 +88,7 @@ const creatureSchema = new mongoose.Schema({
         type: Number,
         default: 50
     },
-    critical_health: {
+    critical_damage_percentage: {
         type: Number,
         default: 50
     },
@@ -112,7 +112,7 @@ creatureSchema.methods.getCurrentStats = function() {
             health: statsForLevel.health,
             speed: statsForLevel.speed || this.speed,
             armor: statsForLevel.armor || this.armor,
-            critical_health: statsForLevel.critical_health || this.critical_health,
+            critical_damage_percentage: statsForLevel.critical_damage_percentage || this.critical_damage_percentage,
             critical_damage: statsForLevel.critical_damage || this.critical_damage
         };
     }
@@ -124,7 +124,7 @@ creatureSchema.methods.getCurrentStats = function() {
         health: this.base_health,
         speed: this.speed,
         armor: this.armor,
-        critical_health: this.critical_health,
+        critical_damage_percentage: this.critical_damage_percentage,
         critical_damage: this.critical_damage
     };
 };
@@ -161,7 +161,7 @@ creatureSchema.methods.generateLevelStats = function(attackIncreasePercent = 3, 
             health: currentHealth,
             speed: this.speed,
             armor: this.armor,
-            critical_health: this.critical_health,
+            critical_damage_percentage: this.critical_damage_percentage,
             critical_damage: this.critical_damage
         });
     }

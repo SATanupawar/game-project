@@ -835,9 +835,18 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
             health: health,
             speed: levelStats?.speed || creatureTemplate?.speed,
             armor: levelStats?.armor || creatureTemplate?.armor,
-            critical_health: levelStats?.critical_health || creatureTemplate?.critical_health,
-            critical_damage: levelStats?.critical_damage || creatureTemplate?.critical_damage
+            critical_damage_percentage: levelStats?.critical_damage_percentage || creatureTemplate?.critical_damage_percentage || 50,
+            critical_damage: levelStats?.critical_damage || creatureTemplate?.critical_damage || 20
         };
+
+        // If level_stats exist, simplify to only include level, attack and health
+        if (creatureTemplate?.level_stats) {
+            creatureResponse.level_stats = creatureTemplate.level_stats.map(stat => ({
+                level: stat.level,
+                attack: stat.attack,
+                health: stat.health
+            }));
+        }
 
         // Log the complete response for debugging
         console.log('Complete creature response:', creatureResponse);

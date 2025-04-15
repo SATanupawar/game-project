@@ -15,7 +15,7 @@ async function createLevels() {
             health: 1000 + (i - 1) * 200, // Increment health by 200 per level
             speed: 100,
             armor: 50,
-            critical_health: 50,
+            critical_damage_percentage: 50,
             critical_damage: 20,
             gold_coins: 100
         });
