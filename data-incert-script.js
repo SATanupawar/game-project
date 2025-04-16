@@ -311,6 +311,13 @@ async function createCreaturesAndBuildings() {
                 user_name: 'Player1',
                 level: 1,
                 gold_coins: 1000,
+                profile_picture: 'player1.jpg',
+                title: 'Game Master',
+                trophies: [
+                    { name: 'Gold Cup', count: 3 },
+                    { name: 'First Victory', count: 1 }
+                ],
+                trophy_count: 4,
                 buildings: [],
                 creatures: [],
                 battle_selected_creatures: [],

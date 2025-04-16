@@ -54,6 +54,16 @@ const userCurrencySchema = new mongoose.Schema({
     }
 }, { _id: false }); // Disable _id for embedded documents
 
+// Define schema for user trophies
+const userTrophySchema = new mongoose.Schema({
+    name: String,
+    count: {
+        type: Number,
+        default: 0,
+        min: 0
+    }
+}, { _id: false }); // Disable _id for embedded documents
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -67,6 +77,19 @@ const userSchema = new mongoose.Schema({
     level: {
         type: Number,
         default: 1
+    },
+    profile_picture: {
+        type: String,
+        default: 'default.jpg'
+    },
+    title: {
+        type: String,
+        default: ''
+    },
+    trophies: [userTrophySchema],
+    trophy_count: {
+        type: Number,
+        default: 0
     },
     gold_coins: {
         type: Number,

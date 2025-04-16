@@ -24,6 +24,27 @@ const {
 } = require('../service/userService');
 const mongoose = require('mongoose');
 
+// Get all users
+router.get('/', async (req, res) => {
+    try {
+        const User = require('../models/user');
+        const users = await User.find({}, { userId: 1, user_name: 1, level: 1 });
+        
+        res.status(200).json({
+            success: true,
+            message: "Users fetched successfully",
+            data: users
+        });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching users',
+            error: error.message
+        });
+    }
+});
+
 // Get user details
 router.get('/:userId', async (req, res) => {
     try {
@@ -181,6 +202,10 @@ router.get('/:userId', async (req, res) => {
             userId: user.userId,
             user_name: user.user_name,
             level: user.level,
+            profile_picture: user.profile_picture || 'default.jpg',
+            title: user.title || '',
+            trophies: user.trophies || [],
+            trophy_count: user.trophy_count || 0,
             gold_coins: user.gold_coins,
             buildings: processedBuildings,
             creatures: processedCreatures,
@@ -228,6 +253,148 @@ router.get('/:userId', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching user details',
+            error: error.message
+        });
+    }
+});
+
+// Update user profile information
+router.post('/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { user_name, level, title, profile_picture, trophies } = req.body;
+        console.log(`Updating profile for user: ${userId}`);
+
+        // Get required models
+        const User = require('../models/user');
+
+        // Find user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Update user fields if provided
+        if (user_name) user.user_name = user_name;
+        if (level) user.level = parseInt(level);
+        if (title) user.title = title;
+        if (profile_picture) user.profile_picture = profile_picture;
+
+        // Update trophies if provided
+        if (trophies && Array.isArray(trophies)) {
+            // Initialize trophies array if it doesn't exist
+            if (!user.trophies) {
+                user.trophies = [];
+            }
+            
+            // Track trophy changes for the response
+            const trophyChanges = [];
+            
+            // Process each trophy
+            trophies.forEach(newTrophy => {
+                if (!newTrophy.name) return; // Skip if no name provided
+                
+                // Check if the trophy already exists
+                const existingTrophy = user.trophies.find(t => t.name === newTrophy.name);
+                
+                // Check if we should replace instead of increment (default is now increment)
+                const shouldReplace = newTrophy.replace === true;
+                
+                if (existingTrophy) {
+                    // Store previous count for response
+                    const previousCount = existingTrophy.count;
+                    
+                    // Update existing trophy count - either replace or increment (now increment by default)
+                    if (!shouldReplace && newTrophy.count !== undefined) {
+                        // Add to existing count (DEFAULT BEHAVIOR)
+                        existingTrophy.count += newTrophy.count;
+                        
+                        // Record the change
+                        trophyChanges.push({
+                            name: newTrophy.name,
+                            operation: 'increment',
+                            previous_count: previousCount,
+                            increment_amount: newTrophy.count,
+                            new_count: existingTrophy.count
+                        });
+                    } else if (newTrophy.count !== undefined) {
+                        // Replace the count (only if replace=true)
+                        existingTrophy.count = newTrophy.count;
+                        
+                        // Record the change
+                        trophyChanges.push({
+                            name: newTrophy.name,
+                            operation: 'replace',
+                            previous_count: previousCount,
+                            new_count: existingTrophy.count
+                        });
+                    }
+                } else {
+                    // Add new trophy
+                    const newCount = newTrophy.count || 1;
+                    user.trophies.push({
+                        name: newTrophy.name,
+                        count: newCount
+                    });
+                    
+                    // Record the change
+                    trophyChanges.push({
+                        name: newTrophy.name,
+                        operation: 'new',
+                        new_count: newCount
+                    });
+                }
+            });
+            
+            // Calculate total trophy count
+            const previousTotalCount = user.trophy_count || 0;
+            user.trophy_count = user.trophies.reduce((total, trophy) => total + trophy.count, 0);
+            
+            // Save trophy changes for the response
+            req.trophyChanges = {
+                changes: trophyChanges,
+                previous_total: previousTotalCount,
+                new_total: user.trophy_count
+            };
+        }
+
+        // Save updated user
+        await user.save();
+
+        // Format response with updated user data
+        const userData = {
+            _id: user._id,
+            userId: user.userId,
+            user_name: user.user_name,
+            level: user.level,
+            profile_picture: user.profile_picture,
+            title: user.title,
+            trophies: user.trophies || [],
+            trophy_count: user.trophy_count || 0,
+            gold_coins: user.gold_coins,
+            currency: user.currency || {
+                gems: 0,
+                arcane_energy: 0,
+                gold: 0,
+                anima: 0
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: "User profile updated successfully",
+            data: userData,
+            trophy_operations: req.trophyChanges
+        });
+
+    } catch (error) {
+        console.error('Error updating user profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating user profile',
             error: error.message
         });
     }
