@@ -45,6 +45,188 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Create a new user
+router.post('/', async (req, res) => {
+    try {
+        const { 
+            userId, user_name, level, profile_picture, title, 
+            trophies, gold_coins, buildingId, creatureName 
+        } = req.body;
+        
+        console.log(`Creating new user with ID: ${userId}`);
+
+        // Get required models
+        const User = require('../models/user');
+        const Building = require('../models/building');
+        const Creature = require('../models/creature');
+
+        // Validate required fields
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        if (!user_name) {
+            return res.status(400).json({
+                success: false,
+                message: 'User name is required'
+            });
+        }
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ userId });
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: 'User with this ID already exists'
+            });
+        }
+
+        // Create a new user
+        const user = new User({
+            userId: userId,
+            user_name: user_name,
+            level: level || 1,
+            profile_picture: profile_picture || 'default.jpg',
+            title: title || '',
+            gold_coins: gold_coins || 1000,
+            buildings: [],
+            creatures: [],
+            battle_selected_creatures: [],
+            boosts: [],
+            currency: {
+                gems: 0,
+                arcane_energy: 0,
+                gold: gold_coins || 1000, // Initialize with same value as gold_coins
+                anima: 0,
+                last_updated: new Date()
+            }
+        });
+
+        // Add trophies if provided
+        if (trophies && Array.isArray(trophies)) {
+            user.trophies = trophies.map(trophy => ({
+                name: trophy.name,
+                count: trophy.count || 1
+            }));
+            
+            // Calculate total trophy count
+            user.trophy_count = user.trophies.reduce((total, trophy) => total + trophy.count, 0);
+        }
+
+        // Process building assignment if buildingId is provided
+        let building = null;
+        let buildingIndex = null;
+        
+        if (buildingId) {
+            // Find the building template
+            building = await Building.findOne({ buildingId });
+            
+            if (!building) {
+                return res.status(404).json({
+                    success: false,
+                    message: `Building with ID ${buildingId} not found`
+                });
+            }
+            
+            // Generate a unique index for the building
+            buildingIndex = Math.floor(Math.random() * 10000000000);
+            
+            // Add the building to the user
+            user.buildings.push({
+                buildingId: building.buildingId,
+                name: building.name,
+                gold_coins: building.gold_coins || 0,
+                position: { x: 10, y: 10 }, // Default position
+                size: building.size || { x: 2, y: 2 },
+                index: buildingIndex,
+                reserveCoins: 0,
+                last_collected: new Date()
+            });
+            
+            console.log(`Added building ${building.name} to user ${userId}`);
+        }
+        
+        // Process creature assignment if creatureName is provided and a building was added
+        if (creatureName && buildingIndex) {
+            // Find the creature template (case insensitive)
+            const creature = await Creature.findOne({
+                name: { $regex: new RegExp('^' + creatureName + '$', 'i') }
+            });
+            
+            if (!creature) {
+                return res.status(404).json({
+                    success: false,
+                    message: `Creature with name ${creatureName} not found`
+                });
+            }
+            
+            // Create a creature ID
+            const creatureId = new mongoose.Types.ObjectId();
+            
+            // Add the creature to the user
+            user.creatures.push({
+                _id: creatureId,
+                creature_id: creatureId,
+                creature_type: creature.creature_Id,
+                name: creature.name,
+                level: 1,
+                building_index: buildingIndex,
+                base_attack: creature.base_attack,
+                base_health: creature.base_health,
+                attack: creature.base_attack,
+                health: creature.base_health,
+                gold_coins: creature.gold_coins,
+                count: 1
+            });
+            
+            console.log(`Added creature ${creature.name} to building index ${buildingIndex}`);
+        } else if (creatureName && !buildingIndex) {
+            console.log(`Creature ${creatureName} not added because no building was specified`);
+        }
+
+        // Save the user
+        await user.save();
+
+        // Format the response
+        const userData = {
+            _id: user._id,
+            userId: user.userId,
+            user_name: user.user_name,
+            level: user.level,
+            profile_picture: user.profile_picture,
+            title: user.title,
+            trophies: user.trophies || [],
+            trophy_count: user.trophy_count || 0,
+            gold_coins: user.gold_coins,
+            buildings: user.buildings || [],
+            creatures: user.creatures || [],
+            currency: user.currency || {
+                gems: 0,
+                arcane_energy: 0,
+                gold: user.gold_coins,
+                anima: 0
+            }
+        };
+
+        res.status(201).json({
+            success: true,
+            message: "User created successfully",
+            data: userData
+        });
+
+    } catch (error) {
+        console.error('Error creating user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error creating user',
+            error: error.message
+        });
+    }
+});
+
 // Get user details
 router.get('/:userId', async (req, res) => {
     try {
