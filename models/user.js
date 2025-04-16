@@ -28,6 +28,32 @@ const userBoostSchema = new mongoose.Schema({
     }
 }, { _id: false }); // Disable _id for embedded documents
 
+// Define schema for user currencies
+const userCurrencySchema = new mongoose.Schema({
+    gems: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 10000000 // 10M max
+    },
+    arcane_energy: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100000000 // 100M max
+    },
+    anima: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 1000000 // 1M max
+    },
+    last_updated: {
+        type: Date,
+        default: Date.now
+    }
+}, { _id: false }); // Disable _id for embedded documents
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -44,7 +70,8 @@ const userSchema = new mongoose.Schema({
     },
     gold_coins: {
         type: Number,
-        required: true
+        required: true,
+        max: 100000000
     },
     buildings: [{
         buildingId: String,
@@ -92,6 +119,14 @@ const userSchema = new mongoose.Schema({
     }],
     battle_selected_creatures: [battleCreatureSchema],
     boosts: [userBoostSchema], // Array of boosts the user has obtained
+    currency: {
+        type: userCurrencySchema,
+        default: () => ({}) // Initialize with default values
+    },
+    currency_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Currency'
+    },
     logout_time: {
         type: Date,
         default: Date.now

@@ -3,6 +3,7 @@ const User = require('./models/user');
 const Building = require('./models/building');
 const Creature = require('./models/creature');
 const Boost = require('./models/boost');
+const Currency = require('./models/currency');
 
 // Function to display creature info with level stats
 async function displayCreatureInfo(creature) {
@@ -304,14 +305,27 @@ async function createCreaturesAndBuildings() {
         if (userExists) {
             console.log('User already exists. Skipping user creation.');
         } else {
+            // Create user with gold stored in both gold_coins and currency.gold (they represent the same currency)
             const user = new User({
                 userId: 'user1',
                 user_name: 'Player1',
+                level: 1,
                 gold_coins: 1000,
-                buildings: []  // Empty buildings array
+                buildings: [],
+                creatures: [],
+                battle_selected_creatures: [],
+                boosts: [],
+                currency: {
+                    gems: 0,
+                    arcane_energy: 0,
+                    gold: 1000, 
+                    anima: 0,
+                    last_updated: new Date()
+                },
+                logout_time: new Date()
             });
             await user.save();
-            console.log('Created user without any buildings');
+            console.log('Created user with default currency values');
         }
 
         // Demonstrate creature level progression with multiple creatures
@@ -405,6 +419,67 @@ async function createBoosts() {
     }
 }
 
+async function createCurrencies() {
+    try {
+        // Check if currencies already exist
+        const currencyCount = await Currency.countDocuments();
+        if (currencyCount > 0) {
+            console.log('Currencies already exist in the database. Skipping currency creation.');
+            
+            // Display existing currencies
+            const existingCurrencies = await Currency.find();
+            console.log('\nExisting currencies:');
+            console.log('ID | Name | Type | Max Value');
+            console.log('---------------------------');
+            existingCurrencies.forEach(currency => {
+                console.log(`${currency.currency_id} | ${currency.name} | ${currency.type} | ${currency.max_value}`);
+            });
+            return;
+        }
+        
+        // Create currency types
+        const currencyTypes = [
+            { 
+                currency_id: 'gems',
+                name: 'Gems', 
+                type: 'Gems', // Same as name
+                max_value: 10000000 // 10M max
+            },
+            { 
+                currency_id: 'arcane_energy',
+                name: 'Arcane Energy', 
+                type: 'Arcane Energy', // Same as name
+                max_value: 100000000 // 100M max
+            },
+            { 
+                currency_id: 'anima',
+                name: 'Anima', 
+                type: 'Anima', // Same as name
+                max_value: 1000000 // 1M max
+            }
+        ];
+
+        // Save currencies to database
+        const savedCurrencies = [];
+        for (const currencyData of currencyTypes) {
+            const currency = new Currency(currencyData);
+            await currency.save();
+            savedCurrencies.push(currency);
+        }
+
+        console.log('\nCreated currency types:');
+        console.log('ID | Name | Type | Max Value');
+        console.log('---------------------------');
+        savedCurrencies.forEach(currency => {
+            console.log(`${currency.currency_id} | ${currency.name} | ${currency.type} | ${currency.max_value}`);
+        });
+        
+        return savedCurrencies;
+    } catch (error) {
+        console.error('Error creating currencies:', error);
+    }
+}
+
 async function main() {
     try {
         // Use the original MongoDB Atlas connection string
@@ -419,6 +494,9 @@ async function main() {
         
         // Create boosts
         await createBoosts();
+        
+        // Create currencies
+        await createCurrencies();
         
     } catch (error) {
         console.error('Error:', error);

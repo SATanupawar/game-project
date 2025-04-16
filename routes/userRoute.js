@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userService = require('../service/userService');
+const currencyService = require('../service/currencyService');
 const { 
     updateUserGold, 
     getBuildingGoldDetails, 
@@ -48,6 +49,37 @@ router.get('/:userId', async (req, res) => {
         }
         if (!user.creatures) {
             user.creatures = [];
+        }
+        
+        // Ensure currency object is complete
+        if (!user.currency) {
+            user.currency = {
+                gems: 0,
+                arcane_energy: 0,
+                gold: user.gold_coins || 0,
+                anima: 0,
+                last_updated: new Date()
+            };
+        } else if (user.currency.gold === undefined) {
+            // Ensure gold is always present in the currency object
+            user.currency.gold = user.gold_coins || 0;
+            user.markModified('currency');
+        }
+        
+        // Check for any missing currency fields and initialize them
+        const currencyFields = ['gems', 'arcane_energy', 'gold', 'anima'];
+        let currencyUpdated = false;
+        
+        for (const field of currencyFields) {
+            if (user.currency[field] === undefined) {
+                user.currency[field] = field === 'gold' ? user.gold_coins || 0 : 0;
+                currencyUpdated = true;
+            }
+        }
+        
+        if (currencyUpdated) {
+            user.markModified('currency');
+            await user.save();
         }
 
         // Process buildings (without creatures)
@@ -170,11 +202,20 @@ router.get('/:userId', async (req, res) => {
                     count: b.count
                 }))
                 : [],
+            currency: user.currency || {
+                gems: 0,
+                arcane_energy: 0,
+                gold: 0,
+                anima: 0,
+                last_updated: new Date()
+            },
             logout_time: user.logout_time,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
             __v: user.__v
         };
+
+        console.log("Sending user data with currency:", user.currency);
 
         res.status(200).json({
             success: true,
@@ -2402,6 +2443,199 @@ router.delete('/:userId/boosts/:boostId', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error removing boost from user',
+            error: error.message
+        });
+    }
+});
+
+// Add currency routes
+
+// Get user's currency
+router.get('/:userId/currency', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const result = await currencyService.getUserCurrency(userId);
+        
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(404).json(result);
+        }
+    } catch (error) {
+        console.error('Error fetching user currency:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching user currency',
+            error: error.message
+        });
+    }
+});
+
+// Add or remove currency with array of operations - must be defined BEFORE the /:currencyType route
+router.post('/:userId/currency', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { operations } = req.body;
+        
+        // Validate operations
+        if (!operations) {
+            return res.status(400).json({
+                success: false,
+                message: 'Currency operations are required'
+            });
+        }
+        
+        const result = await currencyService.processCurrencyOperations(userId, operations);
+        
+        if (result.success) {
+            // Check if any operation failed
+            const failedOps = result.data.operations_results.filter(op => !op.success);
+            if (failedOps.length > 0) {
+                // If any operation failed, return with details
+                return res.status(400).json({
+                    success: false,
+                    message: "Some currency operations failed",
+                    data: {
+                        failed_operations: failedOps,
+                        successful_operations: result.data.operations_results.filter(op => op.success),
+                        current_currency: result.data.current_currency
+                    }
+                });
+            }
+            
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error processing currency operations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error processing currency operations',
+            error: error.message
+        });
+    }
+});
+
+// Add simple endpoint for adding single currency type
+router.post('/:userId/currency/:currencyType', async (req, res) => {
+    try {
+        const { userId, currencyType } = req.params;
+        const { amount } = req.body;
+        
+        // Validate amount
+        if (amount === undefined || isNaN(parseInt(amount))) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid amount is required'
+            });
+        }
+        
+        // Create operation array with single operation
+        const operations = [
+            {
+                type: currencyType,
+                amount: parseInt(amount)
+            }
+        ];
+        
+        const result = await currencyService.processCurrencyOperations(userId, operations);
+        
+        if (result.success) {
+            // Extract the result for this specific currency for cleaner response
+            const opResult = result.data.operations_results[0];
+            
+            // Check if the operation itself was successful
+            if (!opResult.success) {
+                // If the operation failed (e.g., insufficient funds), return appropriate error
+                return res.status(400).json({
+                    success: false,
+                    message: opResult.message,
+                    data: {
+                        currency_type: opResult.type,
+                        current_value: opResult.current_value
+                    }
+                });
+            }
+            
+            res.status(200).json({
+                success: true,
+                message: opResult.message || `${currencyType} ${amount >= 0 ? 'added' : 'removed'} successfully`,
+                data: {
+                    currency_type: opResult.type,
+                    previous_value: opResult.previous_value,
+                    current_value: opResult.current_value,
+                    change: opResult.change,
+                    max_value: opResult.max_value
+                }
+            });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error updating currency:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating currency',
+            error: error.message
+        });
+    }
+});
+
+// Utility endpoint to sync gold values across all users
+router.post('/sync-gold', async (req, res) => {
+    try {
+        const result = await currencyService.syncGoldValues();
+        
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error syncing gold values:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error syncing gold values',
+            error: error.message
+        });
+    }
+});
+
+// Purchase gold or arcane energy with gems
+router.post('/:userId/purchase', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { type, gems } = req.body;
+        
+        // Validate inputs
+        if (!type || !['gold', 'arcane_energy'].includes(type)) {
+            return res.status(400).json({
+                success: false,
+                message: "Purchase type must be 'gold' or 'arcane_energy'"
+            });
+        }
+        
+        if (!gems || isNaN(parseInt(gems)) || parseInt(gems) <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Valid positive gem amount is required"
+            });
+        }
+        
+        // Process the purchase
+        const result = await currencyService.purchaseWithGems(userId, type, parseInt(gems));
+        
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Error processing purchase:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error processing purchase',
             error: error.message
         });
     }
