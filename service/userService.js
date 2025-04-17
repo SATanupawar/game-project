@@ -6,129 +6,110 @@ const Boost = require('../models/boost');
 
 async function getUserWithDetails(userIdParam) {
     try {
-        console.log(`Getting user details for: ${userIdParam}`);
+        const User = require('../models/user');
+        const Creature = require('../models/creature');
 
-        // First, get the raw user document without population to fix the data
-        let user = await User.findOne({ userId: userIdParam }).lean();
-        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
-            user = await User.findById(userIdParam).lean();
-        }
+        // Find the user
+        const user = await User.findOne({ userId: userIdParam });
         if (!user) {
             throw new Error('User not found');
         }
 
-        // Initialize arrays if they don't exist
-        if (!user.buildings) {
-            user.buildings = [];
-        }
-        if (!user.creatures) {
-            user.creatures = [];
+        // If no creatures, just return the user as is
+        if (!user.creatures || user.creatures.length === 0) {
+            return user;
         }
 
-        console.log('Original user creatures:', JSON.stringify(user.creatures, null, 2));
-
-        // Clean up the creatures array
-        const validCreatures = [];
-        for (let i = 0; i < user.creatures.length; i++) {
-            const creature = user.creatures[i];
-            if (creature && creature.creature_id) {
-                // Create a valid creature entry with all required fields
-                const validCreature = {
-                    creature_id: creature.creature_id,
-                    name: creature.name || `Creature ${i + 1}`,
-                    building_index: typeof creature.building_index === 'number' ? creature.building_index : 0,
-                    level: creature.level || 1
-                };
-                validCreatures.push(validCreature);
+        // Fetch all creature templates
+        const creatureTemplates = await Creature.find();
+        
+        // Create lookup maps for quick reference
+        const templateMap = {};
+        const templateByTypeMap = {};
+        
+        creatureTemplates.forEach(template => {
+            templateMap[template._id.toString()] = template;
+            if (template.creature_Id) {
+                templateByTypeMap[template.creature_Id] = template;
             }
-        }
-
-        // Update the user document with clean data
-        const updateResult = await User.updateOne(
-            { _id: user._id },
-            { $set: { creatures: validCreatures } }
-        );
-        console.log('Update result:', updateResult);
-
-        // Now fetch the updated user with populated data
-        user = await User.findOne({ _id: user._id })
-            .populate({
-                path: 'buildings.creatures',
-                model: 'Creature'
-            });
-
-        if (!user) {
-            throw new Error('Failed to fetch updated user');
-        }
-
-        // Process buildings
-        const processedBuildings = user.buildings.map(building => {
-            if (!building.creatures) {
-                building.creatures = [];
-            }
-
-            const buildingCreatures = building.creatures.map(creature => {
-                if (creature) {
-                    return {
-                        _id: creature._id,
-                        name: creature.name,
-                        type: creature.type,
-                        level: creature.level || 1,
-                        base_attack: creature.base_attack,
-                        base_health: creature.base_health,
-                        gold_coins: creature.gold_coins,
-                        image: creature.image,
-                        description: creature.description
-                    };
-                }
-                return null;
-            }).filter(c => c !== null);
-
-            return {
-                _id: building._id,
-                buildingId: building.buildingId,
-                name: building.name,
-                position: building.position,
-                size: building.size,
-                index: building.index,
-                gold_coins: building.gold_coins,
-                last_collected: building.last_collected,
-                creatures: buildingCreatures
-            };
         });
 
-        // Process creatures for response
-        const processedCreatures = validCreatures.map(creature => ({
-            _id: creature.creature_id,
-            name: creature.name,
-            level: creature.level,
-            building_index: creature.building_index
-        }));
-
-        // Format the response
-        const userData = {
-            _id: user._id,
-            userId: user.userId,
-            user_name: user.user_name,
-            level: user.level,
-            gold_coins: user.gold_coins,
-            buildings: processedBuildings,
-            creatures: processedCreatures,
-            battle_selected_creatures: user.battle_selected_creatures || [],
-            logout_time: user.logout_time,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
-            __v: user.__v
-        };
-
-        return userData;
+        // Process each creature to add full data
+        const enhancedCreatures = [];
+        
+        for (const userCreature of user.creatures) {
+            let template = null;
+            
+            // Try to find by creature_id
+            if (userCreature.creature_id) {
+                const creatureIdString = userCreature.creature_id.toString();
+                template = templateMap[creatureIdString];
+            }
+            
+            // If not found, try by creature_type
+            if (!template && userCreature.creature_type) {
+                template = templateByTypeMap[userCreature.creature_type];
+            }
+            
+            // If still not found, get the first template matching the creature name
+            if (!template && userCreature.name) {
+                template = creatureTemplates.find(t => 
+                    t.name.toLowerCase() === userCreature.name.toLowerCase() ||
+                    t.creature_Id.toLowerCase() === userCreature.name.toLowerCase()
+                );
+            }
+            
+            // If no template found, use first available or continue
+            if (!template && creatureTemplates.length > 0) {
+                template = creatureTemplates[0];
+            }
+            
+            if (!template) {
+                // Just add the original data if no template found
+                enhancedCreatures.push(userCreature);
+                continue;
+            }
+            
+            // Get level stats for current level
+            const level = userCreature.level || 1;
+            const levelStats = template.level_stats.find(stat => stat.level === level) || 
+                              (template.level_stats.length > 0 ? template.level_stats[0] : null);
+            
+            // Create enhanced creature data with full details
+            const enhancedCreature = {
+                _id: userCreature._id,
+                creature_id: userCreature.creature_id || template._id,
+                creature_type: userCreature.creature_type || template.creature_Id,
+                name: template.name,
+                type: template.type,
+                level: level,
+                building_index: userCreature.building_index,
+                base_attack: template.base_attack,
+                base_health: template.base_health,
+                attack: levelStats ? levelStats.attack : template.base_attack,
+                health: levelStats ? levelStats.health : template.base_health,
+                gold_coins: levelStats ? levelStats.gold : template.gold_coins,
+                arcane_energy: levelStats ? levelStats.arcane_energy : template.arcane_energy,
+                speed: template.speed,
+                armor: template.armor,
+                critical_damage_percentage: template.critical_damage_percentage,
+                critical_damage: template.critical_damage,
+                image: template.image,
+                description: template.description,
+                count: userCreature.count || 1
+            };
+            
+            enhancedCreatures.push(enhancedCreature);
+        }
+        
+        // Replace the creatures in the user object with enhanced versions
+        const userObject = user.toObject();
+        userObject.creatures = enhancedCreatures;
+        
+        return userObject;
     } catch (error) {
         console.error('Error in getUserWithDetails:', error);
-        return {
-            success: false,
-            message: "Error fetching user details",
-            error: error.message
-        };
+        throw new Error(`Error fetching user details: ${error.message}`);
     }
 }
 
@@ -1151,11 +1132,53 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         creatureEntry.attack = attack;
         creatureEntry.health = health;
         
+        // Calculate and update gold coins and arcane energy based on type and level
+        let baseGold = creatureTemplate.gold_coins;
+        let baseArcaneEnergy = creatureTemplate.arcane_energy;
+        
+        // If not explicitly set in template, use defaults based on creature type
+        if (!baseArcaneEnergy) {
+            switch(creatureType.toLowerCase()) {
+                case 'common':
+                    baseArcaneEnergy = 99;
+                    if (!baseGold) baseGold = 77;
+                    break;
+                case 'rare':
+                    baseArcaneEnergy = 212;
+                    if (!baseGold) baseGold = 125;
+                    break;
+                case 'epic':
+                    baseArcaneEnergy = 403;
+                    if (!baseGold) baseGold = 415;
+                    break;
+                case 'legendary':
+                    baseArcaneEnergy = 612;
+                    if (!baseGold) baseGold = 1001;
+                    break;
+                case 'elite':
+                    baseArcaneEnergy = 843;
+                    if (!baseGold) baseGold = 1503;
+                    break;
+                default:
+                    baseArcaneEnergy = 99;
+                    if (!baseGold) baseGold = 77;
+            }
+        }
+        
+        // Calculate gold and arcane energy with level multiplier (doubles each level)
+        const levelMultiplier = Math.pow(2, parsedLevel - 1);
+        const goldCoins = baseGold * levelMultiplier;
+        const arcaneEnergy = baseArcaneEnergy * levelMultiplier;
+        
+        // Save gold and arcane energy values
+        creatureEntry.gold_coins = goldCoins;
+        creatureEntry.arcane_energy = arcaneEnergy;
+        
         // Save the user
         await user.save();
         
         console.log(`Updated creature ${creatureEntry.name || creatureEntry.creature_type} from level ${previousLevel} to ${parsedLevel}`);
-        console.log(`New stats: Attack ${attack}, Health ${health}`);
+        console.log(`New stats: Attack ${attack}, Health ${health}, Gold ${goldCoins}, Arcane Energy ${arcaneEnergy}`);
 
         return {
             user: {
@@ -1175,6 +1198,8 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                 newLevel: parsedLevel,
                 attack: attack,
                 health: health,
+                gold: goldCoins,
+                arcane_energy: arcaneEnergy,
                 count: creatureEntry.count || 1
             }
         };
@@ -2230,6 +2255,44 @@ async function mergeCreatures(userIdParam, creatureIds) {
             newHealth += Math.round(newHealth * healthGrowth);
         }
         
+        // Calculate gold and arcane energy based on type
+        let baseGold = baseCreature.gold_coins || creatureTemplate?.gold_coins || 50;
+        let baseArcaneEnergy = baseCreature.arcane_energy || creatureTemplate?.arcane_energy;
+        
+        // If not explicitly set, use defaults based on creature type
+        if (!baseArcaneEnergy) {
+            switch(creatureType.toLowerCase()) {
+                case 'common':
+                    baseArcaneEnergy = 99;
+                    if (!baseGold) baseGold = 77;
+                    break;
+                case 'rare':
+                    baseArcaneEnergy = 212;
+                    if (!baseGold) baseGold = 125;
+                    break;
+                case 'epic':
+                    baseArcaneEnergy = 403;
+                    if (!baseGold) baseGold = 415;
+                    break;
+                case 'legendary':
+                    baseArcaneEnergy = 612;
+                    if (!baseGold) baseGold = 1001;
+                    break;
+                case 'elite':
+                    baseArcaneEnergy = 843;
+                    if (!baseGold) baseGold = 1503;
+                    break;
+                default:
+                    baseArcaneEnergy = 99;
+                    if (!baseGold) baseGold = 77;
+            }
+        }
+        
+        // Calculate gold and arcane energy with level multiplier
+        const levelMultiplier = Math.pow(2, newLevel - 1);
+        const goldCoins = baseGold * levelMultiplier;
+        const arcaneEnergy = baseArcaneEnergy * levelMultiplier;
+        
         // Create merged creature with boosted stats (10% bonus for merging)
         const mergeBonus = 1.1; // 10% bonus
         const mergedCreature = {
@@ -2243,7 +2306,8 @@ async function mergeCreatures(userIdParam, creatureIds) {
             base_health: baseHealth,
             attack: Math.round(newAttack * mergeBonus), // Apply merge bonus
             health: Math.round(newHealth * mergeBonus), // Apply merge bonus
-            gold_coins: baseCreature.gold_coins || creatureTemplate?.gold_coins || 50,
+            gold_coins: goldCoins,
+            arcane_energy: arcaneEnergy,
             image: baseCreature.image || creatureTemplate?.image || 'dragon.png',
             description: baseCreature.description || creatureTemplate?.description || 'A merged creature with enhanced powers'
         };

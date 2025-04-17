@@ -139,124 +139,94 @@ async function createCreaturesAndBuildings() {
         // Create creatures with the new model structure
         const creatureTemplates = [
             {
-                creature_Id: 'dragon',
-                name: 'Dragon',
-                type: 'legendary',
-                gold_coins: 50,
-                description: 'A fierce fire-breathing dragon with immense power',
-                image: 'dragon.png',
-                base_attack: 45,
-                base_health: 250
-            },
-            {
-                creature_Id: 'leviathan',
-                name: 'Leviathan',
-                type: 'elite',
-                gold_coins: 45,
-                description: 'A massive sea serpent that commands the depths of the ocean',
-                image: 'leviathan.png',
-                base_attack: 40,
-                base_health: 280
-            },
-            {
-                creature_Id: 'golem',
-                name: 'Stone Golem',
-                type: 'epic',
-                gold_coins: 40,
-                description: 'A massive creature made of living stone with incredible defense',
-                image: 'golem.png',
-                base_attack: 35,
-                base_health: 350
-            },
-            {
-                creature_Id: 'griffin',
-                name: 'Griffin',
-                type: 'epic',
-                gold_coins: 35,
-                description: 'A majestic flying creature with incredible speed and agility',
-                image: 'griffin.png',
-                base_attack: 38,
-                base_health: 230
-            },
-            {
-                creature_Id: 'phoenix',
-                name: 'Phoenix',
-                type: 'legendary',
-                gold_coins: 55,
-                description: 'A legendary bird that can be reborn from its own ashes',
-                image: 'phoenix.png',
-                base_attack: 42,
-                base_health: 260
-            },
-            {
-                creature_Id: 'hydra',
-                name: 'Hydra',
-                type: 'rare',
-                gold_coins: 30,
-                description: 'A powerful multi-headed serpent with regenerative abilities',
-                image: 'hydra.png',
-                base_attack: 32,
-                base_health: 220
-            },
-            {
-                creature_Id: 'goblin',
-                name: 'Goblin',
+                creature_Id: 'greyscale_dragon',
+                name: 'Greyscale Dragon',
                 type: 'common',
-                gold_coins: 15,
-                description: 'A small but cunning creature that attacks in groups',
-                image: 'goblin.png',
-                base_attack: 25,
-                base_health: 150
+                gold_coins: 77,
+                arcane_energy: 99,
+                description: 'A powerful common dragon with greyscale hide',
+                image: 'greyscale_dragon.png',
+                base_attack: 274,
+                base_health: 1100,
+                speed: 104,
+                armor: 0,
+                critical_damage_percentage: 25,
+                critical_damage: 100
+            },
+            {
+                creature_Id: 'storm_dragon',
+                name: 'Storm Dragon',
+                type: 'rare',
+                gold_coins: 125,
+                arcane_energy: 212,
+                description: 'A rare dragon that commands the storms',
+                image: 'storm_dragon.png',
+                base_attack: 630,
+                base_health: 1630,
+                speed: 105,
+                armor: 0,
+                critical_damage_percentage: 25,
+                critical_damage: 100
+            },
+            {
+                creature_Id: 'armoured_dragon',
+                name: 'Armoured Dragon',
+                type: 'epic',
+                gold_coins: 415,
+                arcane_energy: 403,
+                description: 'An epic dragon with natural armor plating',
+                image: 'armoured_dragon.png',
+                base_attack: 674,
+                base_health: 2010,
+                speed: 126,
+                armor: 0,
+                critical_damage_percentage: 30,
+                critical_damage: 100
+            },
+            {
+                creature_Id: 'fire_dragon',
+                name: 'Fire Dragon',
+                type: 'legendary',
+                gold_coins: 1001,
+                arcane_energy: 612,
+                description: 'A legendary dragon that breathes devastating fire',
+                image: 'fire_dragon.png',
+                base_attack: 1123,
+                base_health: 3030,
+                speed: 110,
+                armor: 0,
+                critical_damage_percentage: 45,
+                critical_damage: 100
             }
         ];
 
+        // Remove all existing creatures first
+        await Creature.deleteMany({});
+        console.log('Removed all existing creatures from the database.');
+
         const savedCreatures = [];
         
-        // Check if creatures already exist to avoid duplicates
-        const creatureCount = await Creature.countDocuments();
-        if (creatureCount > 0) {
-            console.log('Creatures already exist in the database. Skipping creature creation.');
+        // Create new creatures
+        for (const creatureTemplate of creatureTemplates) {
+            const creature = new Creature(creatureTemplate);
+            await creature.save();
+            savedCreatures.push(creature);
             
-            // Just for demo purposes, display existing creatures
-            const existingCreatures = await Creature.find();
-            for (const creature of existingCreatures) {
-                console.log(`\nExisting creature: ${creature.name}`);
-                await displayCreatureInfo(creature);
-            }
-            
-            // Display all level stats for the first creature
-            if (existingCreatures.length > 0) {
-                await displayCreatureLevelStats(existingCreatures[0].creature_Id);
-            }
-            
-            // Compare all creatures at levels 1, 10, 20, 30, and 40
-            await compareCreaturesAtLevel(1);
-            await compareCreaturesAtLevel(10);
-            await compareCreaturesAtLevel(20);
-            await compareCreaturesAtLevel(40);
-        } else {
-            // Create creatures
-            for (const creatureTemplate of creatureTemplates) {
-                const creature = new Creature(creatureTemplate);
-                await creature.save();
-                savedCreatures.push(creature);
-                
-                // Display the created creature with its stats
-                console.log(`\nCreated New ${creature.type} Creature: ${creature.name}`);
-                await displayCreatureInfo(creature);
-            }
-            
-            // Display all level stats for the first creature
-            if (savedCreatures.length > 0) {
-                await displayCreatureLevelStats(savedCreatures[0].creature_Id);
-            }
-            
-            // Compare all creatures at levels 1, 10, 20, 30, and 40
-            await compareCreaturesAtLevel(1);
-            await compareCreaturesAtLevel(10);
-            await compareCreaturesAtLevel(20);
-            await compareCreaturesAtLevel(40);
+            // Display the created creature with its stats
+            console.log(`\nCreated New ${creature.type} Creature: ${creature.name}`);
+            await displayCreatureInfo(creature);
         }
+        
+        // Display all level stats for the first creature
+        if (savedCreatures.length > 0) {
+            await displayCreatureLevelStats(savedCreatures[0].creature_Id);
+        }
+        
+        // Compare all creatures at levels 1, 10, 20, 30, and 40
+        await compareCreaturesAtLevel(1);
+        await compareCreaturesAtLevel(10);
+        await compareCreaturesAtLevel(20);
+        await compareCreaturesAtLevel(40);
 
         // Create 4 buildings
         const buildings = [

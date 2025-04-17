@@ -233,209 +233,20 @@ router.get('/:userId', async (req, res) => {
         const { userId } = req.params;
         console.log(`Fetching details for user: ${userId}`);
 
-        // Get required models
-        const User = require('../models/user');
-        const Creature = require('../models/creature');
-
-        // Find user
-        const user = await User.findOne({ userId });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        // Initialize arrays if they don't exist
-        if (!user.buildings) {
-            user.buildings = [];
-        }
-        if (!user.creatures) {
-            user.creatures = [];
-        }
+        // Use the enhanced getUserWithDetails function
+        const userData = await userService.getUserWithDetails(userId);
         
-        // Ensure currency object is complete
-        if (!user.currency) {
-            user.currency = {
-                gems: 0,
-                arcane_energy: 0,
-                gold: user.gold_coins || 0,
-                anima: 0,
-                last_updated: new Date()
-            };
-        } else if (user.currency.gold === undefined) {
-            // Ensure gold is always present in the currency object
-            user.currency.gold = user.gold_coins || 0;
-            user.markModified('currency');
-        }
-        
-        // Check for any missing currency fields and initialize them
-        const currencyFields = ['gems', 'arcane_energy', 'gold', 'anima'];
-        let currencyUpdated = false;
-        
-        for (const field of currencyFields) {
-            if (user.currency[field] === undefined) {
-                user.currency[field] = field === 'gold' ? user.gold_coins || 0 : 0;
-                currencyUpdated = true;
-            }
-        }
-        
-        if (currencyUpdated) {
-            user.markModified('currency');
-            await user.save();
-        }
-
-        // Process buildings (without creatures)
-        const processedBuildings = user.buildings.map(building => {
-            return {
-                _id: building._id,
-                buildingId: building.buildingId,
-                name: building.name,
-                position: building.position,
-                size: building.size,
-                index: building.index,
-                gold_coins: building.gold_coins,
-                last_collected: building.last_collected,
-                creature_ids: user.creatures
-                    .filter(c => c.building_index === building.index)
-                    .map(c => c._id.toString())
-            };
-        });
-
-        // Process creatures with template data
-        const processedCreatures = await Promise.all(user.creatures.map(async userCreature => {
-            // Find creature template (case insensitive search)
-            const creatureTemplate = await Creature.findOne({
-                name: { $regex: new RegExp('^' + userCreature.name + '$', 'i') }
-            });
-
-            if (creatureTemplate) {
-                // Find the level stats for this creature's level
-                let levelStats = null;
-                if (creatureTemplate.level_stats && creatureTemplate.level_stats.length > 0) {
-                    levelStats = creatureTemplate.level_stats.find(
-                        stats => stats.level === userCreature.level
-                    );
-                }
-
-                // If we found matching level stats, use them
-                if (levelStats) {
-                    return {
-                        _id: userCreature._id,
-                        name: creatureTemplate.name,
-                        level: userCreature.level,
-                        building_index: userCreature.building_index,
-                        type: creatureTemplate.type,
-                        base_attack: creatureTemplate.base_attack,
-                        base_health: creatureTemplate.base_health,
-                        attack: levelStats.attack,
-                        health: levelStats.health,
-                        speed: levelStats.speed,
-                        armor: levelStats.armor,
-                        critical_damage_percentage: levelStats.critical_damage_percentage,
-                        critical_damage: levelStats.critical_damage,
-                        gold_coins: creatureTemplate.gold_coins,
-                        image: creatureTemplate.image,
-                        description: creatureTemplate.description
-                    };
-                } else {
-                    // Calculate stats based on level if no level_stats found
-                    let attack = creatureTemplate.base_attack;
-                    let health = creatureTemplate.base_health;
-                    if (userCreature.level > 1) {
-                        const multiplier = 1 + ((userCreature.level - 1) * 0.1);
-                        attack = Math.round(attack * multiplier);
-                        health = Math.round(health * multiplier);
-                    }
-
-                    return {
-                        _id: userCreature._id,
-                        name: creatureTemplate.name,
-                        level: userCreature.level,
-                        building_index: userCreature.building_index,
-                        type: creatureTemplate.type,
-                        base_attack: creatureTemplate.base_attack,
-                        base_health: creatureTemplate.base_health,
-                        attack: attack,
-                        health: health,
-                        speed: creatureTemplate.speed,
-                        armor: creatureTemplate.armor,
-                        critical_damage_percentage: creatureTemplate.critical_damage_percentage,
-                        critical_damage: creatureTemplate.critical_damage,
-                        gold_coins: creatureTemplate.gold_coins,
-                        image: creatureTemplate.image,
-                        description: creatureTemplate.description
-                    };
-                }
-            } else {
-                // Return basic info if no template found
-                return {
-                    _id: userCreature._id,
-                    name: userCreature.name,
-                    level: userCreature.level,
-                    building_index: userCreature.building_index
-                };
-            }
-        }));
-
-        // Format the response
-        const userData = {
-            _id: user._id,
-            userId: user.userId,
-            user_name: user.user_name,
-            level: user.level,
-            profile_picture: user.profile_picture || 'default.jpg',
-            title: user.title || '',
-            trophies: user.trophies || [],
-            trophy_count: user.trophy_count || 0,
-            gold_coins: user.gold_coins,
-            buildings: processedBuildings,
-            creatures: processedCreatures,
-            battle_selected_creatures: Array.isArray(user.battle_selected_creatures) 
-                ? user.battle_selected_creatures.map(c => ({
-                    _id: c.creature_id,
-                    name: c.name,
-                    level: c.level,
-                    position: c.position,
-                    type: c.type,
-                    attack: c.attack,
-                    health: c.health
-                }))
-                : [],
-            boosts: Array.isArray(user.boosts)
-                ? user.boosts.map(b => ({
-                    boost_id: b.boost_id,
-                    boost_name: b.boost_name,
-                    count: b.count
-                }))
-                : [],
-            currency: user.currency || {
-                gems: 0,
-                arcane_energy: 0,
-                gold: 0,
-                anima: 0,
-                last_updated: new Date()
-            },
-            logout_time: user.logout_time,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
-            __v: user.__v
-        };
-
-        console.log("Sending user data with currency:", user.currency);
-
+        // Return the full user data including enhanced creatures
         res.status(200).json({
             success: true,
-            message: "User details fetched successfully",
+            message: 'User details fetched successfully',
             data: userData
         });
-
     } catch (error) {
         console.error('Error fetching user details:', error);
-        res.status(500).json({
+        res.status(error.message.includes('not found') ? 404 : 500).json({
             success: false,
-            message: 'Error fetching user details',
-            error: error.message
+            message: error.message || 'Error fetching user details'
         });
     }
 });
@@ -2985,6 +2796,112 @@ router.post('/:userId/purchase', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error processing purchase',
+            error: error.message
+        });
+    }
+});
+
+// Update user creatures to match new dragon types
+router.get('/:userId/update-creatures-to-dragons', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Updating creatures for user: ${userId} to new dragons`);
+        
+        // Get required models
+        const User = require('../models/user');
+        const Creature = require('../models/creature');
+        
+        // Find user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Get all available creature templates
+        const dragonTemplates = await Creature.find({});
+        console.log(`Found ${dragonTemplates.length} dragon templates`);
+        
+        if (dragonTemplates.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No dragon templates found in database'
+            });
+        }
+        
+        // Initialize creatures array if needed
+        if (!user.creatures) {
+            user.creatures = [];
+            console.log('Initialized empty creatures array');
+        }
+        
+        // Track updated creatures
+        const updatedCreatures = [];
+        
+        // For each user creature, update it to match a dragon type of similar rarity
+        for (let i = 0; i < user.creatures.length; i++) {
+            const userCreature = user.creatures[i];
+            const oldType = userCreature.type || 'common';
+            
+            // Find a matching dragon by type (rarity)
+            const matchingDragon = dragonTemplates.find(dragon => dragon.type === oldType);
+            
+            // If no matching type, use first available dragon
+            const targetDragon = matchingDragon || dragonTemplates[0];
+            
+            // Keep the creature's building assignment and level
+            const creatureLevel = userCreature.level || 1;
+            const buildingIndex = userCreature.building_index;
+            
+            // Update creature with new dragon attributes but keep the level and building
+            user.creatures[i] = {
+                _id: userCreature._id,
+                creature_id: targetDragon._id,
+                creature_type: targetDragon.creature_Id,
+                name: targetDragon.name,
+                type: targetDragon.type,
+                level: creatureLevel,
+                building_index: buildingIndex,
+                base_attack: targetDragon.base_attack,
+                base_health: targetDragon.base_health,
+                attack: targetDragon.level_stats.find(stat => stat.level === creatureLevel)?.attack || targetDragon.base_attack,
+                health: targetDragon.level_stats.find(stat => stat.level === creatureLevel)?.health || targetDragon.base_health,
+                gold_coins: targetDragon.gold_coins,
+                arcane_energy: targetDragon.arcane_energy,
+                image: targetDragon.image,
+                description: targetDragon.description,
+                count: userCreature.count || 1
+            };
+            
+            updatedCreatures.push({
+                old: {
+                    id: userCreature._id,
+                    type: oldType
+                },
+                new: {
+                    id: user.creatures[i]._id,
+                    name: user.creatures[i].name,
+                    type: user.creatures[i].type,
+                    level: user.creatures[i].level
+                }
+            });
+        }
+        
+        // Save the user with updated creatures
+        await user.save();
+        
+        res.status(200).json({
+            success: true,
+            message: `Updated ${updatedCreatures.length} creatures for user ${userId}`,
+            updatedCreatures: updatedCreatures
+        });
+    } catch (error) {
+        console.error('Error updating user creatures to dragons:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating user creatures',
             error: error.message
         });
     }

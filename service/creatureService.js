@@ -20,6 +20,7 @@ const getAllCreatures = async () => {
                 type: creature.type,
                 level: creature.level,
                 gold_coins: creature.gold_coins,
+                arcane_energy: creature.arcane_energy,
                 base_attack: creature.base_attack,
                 base_health: creature.base_health,
                 attack: stats.attack,
@@ -28,6 +29,8 @@ const getAllCreatures = async () => {
                 armor: stats.armor,
                 critical_damage_percentage: stats.critical_damage_percentage,
                 critical_damage: stats.critical_damage,
+                gold: stats.gold,
+                arcane_energy: stats.arcane_energy,
                 image: creature.image,
                 description: creature.description,
                 // Include all level stats
@@ -70,6 +73,7 @@ const getCreatureById = async (creatureId) => {
             type: creature.type,
             level: creature.level,
             gold_coins: creature.gold_coins,
+            arcane_energy: creature.arcane_energy,
             base_attack: creature.base_attack,
             base_health: creature.base_health,
             attack: stats.attack,
@@ -78,6 +82,8 @@ const getCreatureById = async (creatureId) => {
             armor: stats.armor,
             critical_damage_percentage: stats.critical_damage_percentage,
             critical_damage: stats.critical_damage,
+            gold: stats.gold,
+            arcane_energy: stats.arcane_energy,
             image: creature.image,
             description: creature.description
         };
@@ -114,7 +120,9 @@ const getCreatureStats = async (creatureId) => {
                 name: creature.name,
                 type: creature.type,
                 image: creature.image,
-                current_level: creature.level
+                current_level: creature.level,
+                gold_coins: creature.gold_coins,
+                arcane_energy: creature.arcane_energy
             },
             stats: creature.level_stats.sort((a, b) => a.level - b.level)
         };
@@ -176,7 +184,9 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
                 speed: newStats.speed,
                 armor: newStats.armor,
                 critical_damage_percentage: newStats.critical_damage_percentage,
-                critical_damage: newStats.critical_damage
+                critical_damage: newStats.critical_damage,
+                gold: newStats.gold,
+                arcane_energy: newStats.arcane_energy
             }
         };
     } catch (error) {
@@ -205,6 +215,7 @@ const createCreature = async (creatureData) => {
             type: creature.type,
             level: creature.level,
             gold_coins: creature.gold_coins,
+            arcane_energy: creature.arcane_energy,
             base_attack: creature.base_attack,
             base_health: creature.base_health,
             attack: stats.attack,
@@ -213,6 +224,8 @@ const createCreature = async (creatureData) => {
             armor: stats.armor,
             critical_damage_percentage: stats.critical_damage_percentage,
             critical_damage: stats.critical_damage,
+            gold: stats.gold,
+            arcane_energy: stats.arcane_energy,
             image: creature.image,
             description: creature.description,
             level_stats_count: creature.level_stats.length

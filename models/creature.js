@@ -31,6 +31,14 @@ const levelStatsSchema = new mongoose.Schema({
     critical_damage: {
         type: Number,
         default: 20
+    },
+    gold: {
+        type: Number,
+        default: 0
+    },
+    arcane_energy: {
+        type: Number,
+        default: 0
     }
 }, { _id: false });
 
@@ -51,6 +59,10 @@ const creatureSchema = new mongoose.Schema({
     gold_coins: {
         type: Number,
         required: true
+    },
+    arcane_energy: {
+        type: Number,
+        default: 0
     },
     description: {
         type: String,
@@ -113,7 +125,9 @@ creatureSchema.methods.getCurrentStats = function() {
             speed: statsForLevel.speed || this.speed,
             armor: statsForLevel.armor || this.armor,
             critical_damage_percentage: statsForLevel.critical_damage_percentage || this.critical_damage_percentage,
-            critical_damage: statsForLevel.critical_damage || this.critical_damage
+            critical_damage: statsForLevel.critical_damage || this.critical_damage,
+            gold: statsForLevel.gold || this.gold_coins,
+            arcane_energy: statsForLevel.arcane_energy || this.arcane_energy
         };
     }
     
@@ -125,7 +139,9 @@ creatureSchema.methods.getCurrentStats = function() {
         speed: this.speed,
         armor: this.armor,
         critical_damage_percentage: this.critical_damage_percentage,
-        critical_damage: this.critical_damage
+        critical_damage: this.critical_damage,
+        gold: this.gold_coins,
+        arcane_energy: this.arcane_energy
     };
 };
 
@@ -142,8 +158,41 @@ creatureSchema.methods.setLevel = function(newLevel) {
 creatureSchema.methods.generateLevelStats = function(attackIncreasePercent = 3, healthIncreasePercent = 3) {
     this.level_stats = [];
     
+    // Define base gold and arcane energy values based on creature type
+    let baseGold = this.gold_coins;
+    let baseArcaneEnergy = this.arcane_energy;
+    
+    // If not explicitly set, use default values based on creature type
+    if (!baseArcaneEnergy) {
+        switch(this.type.toLowerCase()) {
+            case 'common':
+                baseArcaneEnergy = 99;
+                if (!baseGold) baseGold = 77;
+                break;
+            case 'rare':
+                baseArcaneEnergy = 212;
+                if (!baseGold) baseGold = 125;
+                break;
+            case 'epic':
+                baseArcaneEnergy = 403;
+                if (!baseGold) baseGold = 415;
+                break;
+            case 'legendary':
+                baseArcaneEnergy = 612;
+                if (!baseGold) baseGold = 1001;
+                break;
+            case 'elite':
+                baseArcaneEnergy = 843;
+                if (!baseGold) baseGold = 1503;
+                break;
+            default:
+                baseArcaneEnergy = 99;
+                if (!baseGold) baseGold = 77;
+        }
+    }
+    
     for (let i = 1; i <= 40; i++) {
-        // Calculate compounding increase based on percentages
+        // Calculate compounding increase based on percentages for attack and health
         // For level 1, we use base stats
         // For each subsequent level, we apply the percentage increase
         let currentAttack = this.base_attack;
@@ -155,6 +204,18 @@ creatureSchema.methods.generateLevelStats = function(attackIncreasePercent = 3, 
             currentHealth += Math.round(currentHealth * (healthIncreasePercent / 100));
         }
         
+        // Calculate gold and arcane energy - doubles with each level
+        // Level 1 uses base values
+        let currentGold = baseGold;
+        let currentArcaneEnergy = baseArcaneEnergy;
+        
+        if (i > 1) {
+            // Double value for each level above 1 (up to level 40)
+            const levelMultiplier = Math.pow(2, i - 1);
+            currentGold = baseGold * levelMultiplier;
+            currentArcaneEnergy = baseArcaneEnergy * levelMultiplier;
+        }
+        
         this.level_stats.push({
             level: i,
             attack: currentAttack,
@@ -162,7 +223,9 @@ creatureSchema.methods.generateLevelStats = function(attackIncreasePercent = 3, 
             speed: this.speed,
             armor: this.armor,
             critical_damage_percentage: this.critical_damage_percentage,
-            critical_damage: this.critical_damage
+            critical_damage: this.critical_damage,
+            gold: currentGold,
+            arcane_energy: currentArcaneEnergy
         });
     }
 };
