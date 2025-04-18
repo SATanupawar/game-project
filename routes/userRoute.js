@@ -2906,9 +2906,19 @@ router.get('/:userId/rumble-construction', async (req, res) => {
         });
     } catch (error) {
         console.error('Error checking rumble construction area:', error);
-        res.status(error.message.includes('not found') ? 404 : 400).json({
+        
+        // Determine appropriate status code based on error message
+        let statusCode = 500;
+        if (error.message.includes('not found')) {
+            statusCode = 404;
+        } else if (error.message.includes('Valid coordinates')) {
+            statusCode = 400;
+        }
+        
+        res.status(statusCode).json({
             success: false,
-            message: error.message
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
@@ -2928,17 +2938,18 @@ router.get('/:userId/rumble-areas', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting rumble areas:', error);
+        
+        // Determine appropriate status code based on error message
+        let statusCode = 500;
         if (error.message.includes('not found')) {
-            res.status(404).json({
-                success: false,
-                message: error.message
-            });
-        } else {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
+            statusCode = 404;
         }
+        
+        res.status(statusCode).json({
+            success: false,
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
