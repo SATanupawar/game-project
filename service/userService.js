@@ -2703,13 +2703,18 @@ const clearRumbleConstructionArea = async (userIdParam, x, y) => {
         const area = user.rumble_construction_area[areaIndex];
         
         // Calculate if the construction is complete
-        const constructionTime = new Date(area.construction_started);
+        const constructionTime = new Date(area.started_time);
+        const finishedTime = new Date(area.finished_time);
         const currentTime = new Date();
-        const timeElapsed = (currentTime - constructionTime) / 1000; // in seconds
         
-        if (timeElapsed < area.construction_time) {
-            const remainingTime = area.construction_time - timeElapsed;
-            throw new Error(`Construction not yet complete. ${remainingTime.toFixed(0)} seconds remaining.`);
+        // Check if current time is before the finished time
+        if (currentTime < finishedTime) {
+            // Calculate remaining time in minutes
+            const remainingMilliseconds = finishedTime - currentTime;
+            const remainingMinutes = Math.ceil(remainingMilliseconds / (1000 * 60));
+            const remainingSeconds = Math.ceil(remainingMilliseconds / 1000);
+            
+            throw new Error(`Construction not yet complete. ${remainingMinutes} minutes and ${remainingSeconds % 60} seconds remaining.`);
         }
 
         // If construction is complete, remove from construction array and add to cleared array
