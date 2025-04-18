@@ -2810,15 +2810,28 @@ router.post('/:userId/rumble-construction', async (req, res) => {
         
         console.log(`Adding rumble construction area for user ${userId} at coordinates (${x}, ${y}) for ${timeInMinutes} minutes`);
         
-        if (typeof x !== 'number' || typeof y !== 'number' || typeof timeInMinutes !== 'number') {
+        // Validate parameters
+        if (x === undefined || y === undefined || timeInMinutes === undefined) {
             return res.status(400).json({
                 success: false,
-                message: 'x, y coordinates and timeInMinutes must be numbers'
+                message: 'x, y coordinates and timeInMinutes are required'
+            });
+        }
+        
+        // Parse to ensure they are numbers
+        const parsedX = parseInt(x);
+        const parsedY = parseInt(y);
+        const parsedTime = parseInt(timeInMinutes);
+        
+        if (isNaN(parsedX) || isNaN(parsedY) || isNaN(parsedTime)) {
+            return res.status(400).json({
+                success: false,
+                message: 'x, y coordinates and timeInMinutes must be valid numbers'
             });
         }
         
         // Call the service function
-        const result = await userService.addRumbleConstructionArea(userId, { x, y }, timeInMinutes);
+        const result = await userService.addRumbleConstructionArea(userId, { x: parsedX, y: parsedY }, parsedTime);
         
         res.status(200).json({
             success: true,
@@ -2827,9 +2840,21 @@ router.post('/:userId/rumble-construction', async (req, res) => {
         });
     } catch (error) {
         console.error('Error adding rumble construction area:', error);
-        res.status(error.message.includes('not found') ? 404 : 400).json({
+        
+        // Determine appropriate status code
+        let statusCode = 500;
+        if (error.message.includes('not found')) {
+            statusCode = 404;
+        } else if (error.message.includes('already') || 
+                  error.message.includes('Valid coordinates') ||
+                  error.message.includes('Valid timeInMinutes')) {
+            statusCode = 400;
+        }
+        
+        res.status(statusCode).json({
             success: false,
-            message: error.message
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
@@ -2932,7 +2957,18 @@ router.post('/:userId/rumble-areas/clear', async (req, res) => {
         
         console.log(`Clearing rumble construction area at (${x}, ${y}) for user: ${userId}`);
         
-        const result = await userService.clearRumbleConstructionArea(userId, parseInt(x), parseInt(y));
+        // Parse x and y to ensure they are numbers
+        const parsedX = parseInt(x);
+        const parsedY = parseInt(y);
+        
+        if (isNaN(parsedX) || isNaN(parsedY)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Coordinates must be valid numbers'
+            });
+        }
+        
+        const result = await userService.clearRumbleConstructionArea(userId, parsedX, parsedY);
         
         res.status(200).json({
             success: true,
@@ -2941,22 +2977,21 @@ router.post('/:userId/rumble-areas/clear', async (req, res) => {
         });
     } catch (error) {
         console.error('Error clearing rumble construction area:', error);
+        
+        // Determine appropriate status code based on error message
+        let statusCode = 500;
         if (error.message.includes('not found')) {
-            res.status(404).json({
-                success: false,
-                message: error.message
-            });
-        } else if (error.message.includes('not yet complete')) {
-            res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        } else {
-            res.status(500).json({
-                success: false,
-                message: error.message
-            });
+            statusCode = 404;
+        } else if (error.message.includes('not yet complete') || 
+                   error.message.includes('No construction area found')) {
+            statusCode = 400;
         }
+        
+        res.status(statusCode).json({
+            success: false,
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 

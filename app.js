@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/game_db', {
+mongoose.connect('mongodb://0.0.0.0:27017/game_db', {
     useNewUrlParser: true,
     useUnifiedTopology: true
 })
@@ -32,6 +32,6 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 }); 
