@@ -34,6 +34,11 @@ const buildingSchema = new mongoose.Schema({
             default: 1
         }
     },
+    constructionTime: {
+        type: Number,
+        default: 0,  // Time in minutes
+        required: true
+    },
     creatures: [{
         creature_id: {
             type: mongoose.Schema.Types.ObjectId,

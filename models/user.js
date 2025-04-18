@@ -177,6 +177,24 @@ const userSchema = new mongoose.Schema({
             cleared_time: Date
         }
     ],
+    building_construction: [
+        {
+            buildingId: String,
+            name: String,
+            gold_coins: Number,
+            position: {
+                x: Number,
+                y: Number
+            },
+            size: {
+                x: Number,
+                y: Number
+            },
+            index: Number,
+            started_time: Date,
+            finished_time: Date
+        }
+    ],
     logout_time: {
         type: Date,
         default: Date.now

@@ -2806,9 +2806,10 @@ router.get('/:userId/update-creatures-to-dragons', async (req, res) => {
 router.post('/:userId/rumble-construction', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { x, y, timeInMinutes } = req.body;
+        let { x, y, timeInMinutes } = req.body;
         
-        console.log(`Adding rumble construction area for user ${userId} at coordinates (${x}, ${y}) for ${timeInMinutes} minutes`);
+        console.log(`Request body for rumble-construction:`, JSON.stringify(req.body));
+        console.log(`Raw parameter types - x: ${typeof x}, y: ${typeof y}, timeInMinutes: ${typeof timeInMinutes}`);
         
         // Validate parameters
         if (x === undefined || y === undefined || timeInMinutes === undefined) {
@@ -2818,10 +2819,13 @@ router.post('/:userId/rumble-construction', async (req, res) => {
             });
         }
         
-        // Parse to ensure they are numbers
-        const parsedX = parseInt(x);
-        const parsedY = parseInt(y);
-        const parsedTime = parseInt(timeInMinutes);
+        // Convert to numbers more aggressively
+        // Parse to ensure they are numbers, handling strings or numbers
+        const parsedX = Number(x);
+        const parsedY = Number(y);
+        const parsedTime = Number(timeInMinutes);
+        
+        console.log(`Parsed parameter values - x: ${parsedX}, y: ${parsedY}, timeInMinutes: ${parsedTime}`);
         
         if (isNaN(parsedX) || isNaN(parsedY) || isNaN(parsedTime)) {
             return res.status(400).json({
@@ -2846,8 +2850,8 @@ router.post('/:userId/rumble-construction', async (req, res) => {
         if (error.message.includes('not found')) {
             statusCode = 404;
         } else if (error.message.includes('already') || 
-                  error.message.includes('Valid coordinates') ||
-                  error.message.includes('Valid timeInMinutes')) {
+                   error.message.includes('Valid coordinates') ||
+                   error.message.includes('Valid timeInMinutes')) {
             statusCode = 400;
         }
         
@@ -2867,18 +2871,21 @@ router.get('/:userId/rumble-construction', async (req, res) => {
         // Get coordinates from either query parameters or request body
         let coordinates = {};
         
+        console.log(`Request query parameters:`, JSON.stringify(req.query));
+        console.log(`Request body:`, JSON.stringify(req.body));
+        
         // Check if coordinates are in query parameters
         if (req.query.x !== undefined && req.query.y !== undefined) {
             coordinates = {
-                x: parseInt(req.query.x),
-                y: parseInt(req.query.y)
+                x: Number(req.query.x),
+                y: Number(req.query.y)
             };
         } 
         // Check if coordinates are in request body
         else if (req.body.x !== undefined && req.body.y !== undefined) {
             coordinates = {
-                x: parseInt(req.body.x),
-                y: parseInt(req.body.y)
+                x: Number(req.body.x),
+                y: Number(req.body.y)
             };
         } else {
             return res.status(400).json({
@@ -2888,6 +2895,7 @@ router.get('/:userId/rumble-construction', async (req, res) => {
         }
         
         console.log(`Checking rumble construction area for user ${userId} at coordinates (${coordinates.x}, ${coordinates.y})`);
+        console.log(`Parsed coordinates - x: ${coordinates.x}, y: ${coordinates.y}`);
         
         if (isNaN(coordinates.x) || isNaN(coordinates.y)) {
             return res.status(400).json({
@@ -2957,7 +2965,7 @@ router.get('/:userId/rumble-areas', async (req, res) => {
 router.post('/:userId/rumble-areas/clear', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { x, y } = req.body;
+        let { x, y } = req.body;
         
         if (x === undefined || y === undefined) {
             return res.status(400).json({
@@ -2966,11 +2974,15 @@ router.post('/:userId/rumble-areas/clear', async (req, res) => {
             });
         }
         
+        console.log(`Request body for rumble-areas/clear:`, JSON.stringify(req.body));
+        console.log(`Raw parameter types - x: ${typeof x}, y: ${typeof y}`);
         console.log(`Clearing rumble construction area at (${x}, ${y}) for user: ${userId}`);
         
         // Parse x and y to ensure they are numbers
-        const parsedX = parseInt(x);
-        const parsedY = parseInt(y);
+        const parsedX = Number(x);
+        const parsedY = Number(y);
+        
+        console.log(`Parsed parameter values - x: ${parsedX}, y: ${parsedY}`);
         
         if (isNaN(parsedX) || isNaN(parsedY)) {
             return res.status(400).json({

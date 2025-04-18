@@ -2426,18 +2426,25 @@ async function addRumbleConstructionArea(userIdParam, coordinates, timeInMinutes
     try {
         const User = require('../models/user');
         
+        console.log(`Service addRumbleConstructionArea called with userIdParam: ${userIdParam}`);
+        console.log(`Coordinates received:`, JSON.stringify(coordinates));
+        console.log(`Time in minutes: ${timeInMinutes}, type: ${typeof timeInMinutes}`);
+        
         // Find the user
         const user = await User.findOne({ userId: userIdParam });
         if (!user) {
+            console.log(`User not found with userId: ${userIdParam}`);
             throw new Error('User not found');
         }
         
         // Validate inputs
         if (!coordinates || typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
+            console.log(`Invalid coordinates:`, JSON.stringify(coordinates));
             throw new Error('Valid coordinates (x, y) are required');
         }
         
         if (!timeInMinutes || typeof timeInMinutes !== 'number' || timeInMinutes <= 0) {
+            console.log(`Invalid timeInMinutes: ${timeInMinutes}`);
             throw new Error('Valid timeInMinutes (positive number) is required');
         }
         
