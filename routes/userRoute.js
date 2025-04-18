@@ -208,7 +208,9 @@ router.post('/', async (req, res) => {
                 arcane_energy: 0,
                 gold: user.gold_coins,
                 anima: 0
-            }
+            },
+            rumble_construction_area: user.rumble_construction_area || [],
+            clear_rumble: user.clear_rumble || []
         };
 
         res.status(201).json({
@@ -373,7 +375,9 @@ router.post('/:userId', async (req, res) => {
                 arcane_energy: 0,
                 gold: 0,
                 anima: 0
-            }
+            },
+            rumble_construction_area: user.rumble_construction_area || [],
+            clear_rumble: user.clear_rumble || []
         };
 
         res.status(200).json({
@@ -600,135 +604,26 @@ router.get('/:userId/buildings/:buildingId/creatures', async (req, res) => {
     }
 });
 
-// Get user buildings
+// Get user buildings with creatures
 router.get('/:userId/buildings', async (req, res) => {
     try {
         const { userId } = req.params;
-        console.log(`Fetching buildings for user ${userId}`);
-
-        // Get required models
-        const User = require('../models/user');
-        const Creature = require('../models/creature');
-
-        // Find user
-        const user = await User.findOne({ userId });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        // Process buildings and fetch creature information
-        const processedBuildings = await Promise.all(user.buildings.map(async building => {
-            // Find all creatures for this building
-            const buildingCreatures = user.creatures.filter(c => c.building_index === building.index);
-            
-            // Get complete creature information from creature table
-            const processedCreatures = await Promise.all(buildingCreatures.map(async userCreature => {
-                // Find creature template (case insensitive search)
-                const creatureTemplate = await Creature.findOne({
-                    name: { $regex: new RegExp('^' + userCreature.name + '$', 'i') }
-                });
-                
-                if (creatureTemplate) {
-                    // Find the level stats for this creature's level
-                    let levelStats = null;
-                    if (creatureTemplate.level_stats && creatureTemplate.level_stats.length > 0) {
-                        levelStats = creatureTemplate.level_stats.find(
-                            stats => stats.level === userCreature.level
-                        );
-                    }
-
-                    // If we found matching level stats, use them
-                    if (levelStats) {
-                        return {
-                            _id: userCreature._id,
-                            name: creatureTemplate.name,
-                            level: userCreature.level,
-                            building_index: userCreature.building_index,
-                            type: creatureTemplate.type,
-                            base_attack: creatureTemplate.base_attack,
-                            base_health: creatureTemplate.base_health,
-                            attack: levelStats.attack,
-                            health: levelStats.health,
-                            speed: levelStats.speed,
-                            armor: levelStats.armor,
-                            critical_damage_percentage: levelStats.critical_damage_percentage,
-                            critical_damage: levelStats.critical_damage,
-                            gold_coins: creatureTemplate.gold_coins,
-                            image: creatureTemplate.image,
-                            description: creatureTemplate.description
-                        };
-                    } else {
-                        // Calculate stats based on level if no level_stats found
-                        let attack = creatureTemplate.base_attack;
-                        let health = creatureTemplate.base_health;
-                        if (userCreature.level > 1) {
-                            const multiplier = 1 + ((userCreature.level - 1) * 0.1);
-                            attack = Math.round(attack * multiplier);
-                            health = Math.round(health * multiplier);
-                        }
-
-                        return {
-                            _id: userCreature._id,
-                            name: creatureTemplate.name,
-                            level: userCreature.level,
-                            building_index: userCreature.building_index,
-                            type: creatureTemplate.type,
-                            base_attack: creatureTemplate.base_attack,
-                            base_health: creatureTemplate.base_health,
-                            attack: attack,
-                            health: health,
-                            speed: creatureTemplate.speed,
-                            armor: creatureTemplate.armor,
-                            critical_damage_percentage: creatureTemplate.critical_damage_percentage,
-                            critical_damage: creatureTemplate.critical_damage,
-                            gold_coins: creatureTemplate.gold_coins,
-                            image: creatureTemplate.image,
-                            description: creatureTemplate.description
-                        };
-                    }
-                } else {
-                    // Return basic info if no template found
-                    return {
-                        _id: userCreature._id,
-                        name: userCreature.name,
-                        level: userCreature.level,
-                        building_index: userCreature.building_index
-                    };
-                }
-            }));
-
-            // Return building with creature information
-            return {
-                _id: building._id,
-                buildingId: building.buildingId,
-                name: building.name,
-                position: building.position,
-                size: building.size,
-                index: building.index,
-                type: building.type,
-                status: building.status,
-                gold_coins: building.gold_coins,
-                last_collected: building.last_collected,
-                creature_ids: buildingCreatures.map(c => c._id),
-                creatures: processedCreatures
-            };
-        }));
-
+        console.log(`Fetching buildings for user: ${userId}`);
+        
+        // Use the enhanced getUserBuildings function
+        const result = await userService.getUserBuildings(userId);
+        
+        // Return the response
         res.status(200).json({
             success: true,
-            message: `User buildings (${processedBuildings.length}) fetched successfully`,
-            data: {
-                buildings: processedBuildings
-            }
+            message: `User buildings (${result.buildings.length}) fetched successfully`,
+            data: result
         });
     } catch (error) {
-        console.error('Error fetching buildings:', error);
-        res.status(500).json({
+        console.error('Error fetching user buildings:', error);
+        res.status(error.message.includes('not found') ? 404 : 500).json({
             success: false,
-            message: error.message
+            message: error.message || 'Error fetching user buildings'
         });
     }
 });
@@ -2904,6 +2799,164 @@ router.get('/:userId/update-creatures-to-dragons', async (req, res) => {
             message: 'Error updating user creatures',
             error: error.message
         });
+    }
+});
+
+// Add a new rumble construction area
+router.post('/:userId/rumble-construction', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { x, y, timeInMinutes } = req.body;
+        
+        console.log(`Adding rumble construction area for user ${userId} at coordinates (${x}, ${y}) for ${timeInMinutes} minutes`);
+        
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof timeInMinutes !== 'number') {
+            return res.status(400).json({
+                success: false,
+                message: 'x, y coordinates and timeInMinutes must be numbers'
+            });
+        }
+        
+        // Call the service function
+        const result = await userService.addRumbleConstructionArea(userId, { x, y }, timeInMinutes);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Rumble construction area added successfully',
+            data: result
+        });
+    } catch (error) {
+        console.error('Error adding rumble construction area:', error);
+        res.status(error.message.includes('not found') ? 404 : 400).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Check status of a rumble construction area
+router.get('/:userId/rumble-construction', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Get coordinates from either query parameters or request body
+        let coordinates = {};
+        
+        // Check if coordinates are in query parameters
+        if (req.query.x !== undefined && req.query.y !== undefined) {
+            coordinates = {
+                x: parseInt(req.query.x),
+                y: parseInt(req.query.y)
+            };
+        } 
+        // Check if coordinates are in request body
+        else if (req.body.x !== undefined && req.body.y !== undefined) {
+            coordinates = {
+                x: parseInt(req.body.x),
+                y: parseInt(req.body.y)
+            };
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: 'x and y coordinates must be provided either in query parameters or request body'
+            });
+        }
+        
+        console.log(`Checking rumble construction area for user ${userId} at coordinates (${coordinates.x}, ${coordinates.y})`);
+        
+        if (isNaN(coordinates.x) || isNaN(coordinates.y)) {
+            return res.status(400).json({
+                success: false,
+                message: 'x and y coordinates must be valid numbers'
+            });
+        }
+        
+        // Call the service function
+        const result = await userService.checkRumbleConstructionArea(userId, coordinates);
+        
+        res.status(200).json({
+            success: true,
+            message: `Rumble construction area status: ${result.status}`,
+            data: result
+        });
+    } catch (error) {
+        console.error('Error checking rumble construction area:', error);
+        res.status(error.message.includes('not found') ? 404 : 400).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get all rumble construction and cleared areas
+router.get('/:userId/rumble-areas', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Getting rumble areas for user: ${userId}`);
+        
+        const rumbleAreas = await userService.getUserRumbleAreas(userId);
+        
+        res.status(200).json({
+            success: true,
+            message: `Retrieved ${rumbleAreas.constructionAreas.length} construction areas and ${rumbleAreas.clearedAreas.length} cleared areas`,
+            data: rumbleAreas
+        });
+    } catch (error) {
+        console.error('Error getting rumble areas:', error);
+        if (error.message.includes('not found')) {
+            res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+    }
+});
+
+// Clear a completed rumble construction area
+router.post('/:userId/rumble-areas/clear', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { x, y } = req.body;
+        
+        if (x === undefined || y === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'Coordinates (x, y) are required'
+            });
+        }
+        
+        console.log(`Clearing rumble construction area at (${x}, ${y}) for user: ${userId}`);
+        
+        const result = await userService.clearRumbleConstructionArea(userId, parseInt(x), parseInt(y));
+        
+        res.status(200).json({
+            success: true,
+            message: 'Rumble construction area cleared successfully',
+            data: result
+        });
+    } catch (error) {
+        console.error('Error clearing rumble construction area:', error);
+        if (error.message.includes('not found')) {
+            res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        } else if (error.message.includes('not yet complete')) {
+            res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
+        }
     }
 });
 

@@ -1376,262 +1376,129 @@ async function getBuildingCreatures(userIdParam, buildingIndex) {
 // Get user buildings with details
 async function getUserBuildings(userIdParam) {
     try {
-        console.log(`Getting buildings for user: ${userIdParam}`);
+        const User = require('../models/user');
+        const Creature = require('../models/creature');
         
-        // Try to find by userId first with populated creatures
-        let user = await User.findOne({ userId: userIdParam });
-
-        // If not found, try to find by MongoDB _id
-        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
-            user = await User.findById(userIdParam);
-        }
-
+        // Find the user
+        const user = await User.findOne({ userId: userIdParam });
         if (!user) {
             throw new Error('User not found');
         }
-        
-        console.log(`Found user with ${user.buildings.length} buildings and ${user.creatures ? user.creatures.length : 0} creatures`);
 
-        // Initialize creatures array if not present
-        if (!user.creatures) {
-            user.creatures = [];
-        }
-        
-        // Check if creatures array contains strings (just IDs) and fetch complete creature data
-        const userCreatures = [];
-        const creatureIds = [];
-
-        // Collect all creature IDs that need to be fetched
-        if (Array.isArray(user.creatures)) {
-            user.creatures.forEach(creature => {
-                if (typeof creature === 'string' || creature instanceof mongoose.Types.ObjectId) {
-                    creatureIds.push(creature.toString());
-                } else {
-                    // If it's already a creature object, add it to userCreatures
-                    userCreatures.push(creature);
-                }
-            });
+        // If no buildings, return empty array
+        if (!user.buildings || user.buildings.length === 0) {
+            return { buildings: [] };
         }
 
-        // Load creatures from database if we have IDs
-        let dbCreatures = [];
-        if (creatureIds.length > 0) {
-            console.log(`Fetching ${creatureIds.length} creatures from database`);
-            try {
-                dbCreatures = await Creature.find({ 
-                    _id: { $in: creatureIds.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) } 
-                });
-                console.log(`Found ${dbCreatures.length} creatures in database`);
-            } catch (error) {
-                console.error('Error fetching creatures:', error);
-            }
-        }
-
-        // Load all creature templates for reference
-        const allTemplates = await Creature.find({});
-        console.log(`Loaded ${allTemplates.length} creature templates`);
+        // Get all creature templates for reference
+        const creatureTemplates = await Creature.find();
         
-        // Create lookup maps for quick access
-        const templatesByType = {};
-        const templatesById = {};
-        const creaturesByStringId = {};
+        // Create lookup maps for quick reference
+        const templateMap = {};
+        const templateByTypeMap = {};
         
-        // Index templates by type and ID
-        allTemplates.forEach(template => {
+        creatureTemplates.forEach(template => {
+            templateMap[template._id.toString()] = template;
             if (template.creature_Id) {
-                templatesByType[template.creature_Id] = template;
+                templateByTypeMap[template.creature_Id] = template;
             }
-            if (template._id) {
-                templatesById[template._id.toString()] = template;
-            }
-        });
-        
-        // Index DB creatures by ID for quick lookup
-        dbCreatures.forEach(creature => {
-            creaturesByStringId[creature._id.toString()] = creature;
         });
 
-        // Format the buildings data
-        const formattedBuildings = user.buildings.map(building => {
-            const buildingData = {
+        // Process buildings with enhanced creatures
+        const processedBuildings = [];
+        
+        for (const building of user.buildings) {
+            // Find creatures assigned to this building
+            const buildingCreatures = user.creatures.filter(
+                creature => creature.building_index === building.index
+            );
+            
+            // Process each creature to add full details
+            const enhancedCreatures = [];
+            
+            for (const userCreature of buildingCreatures) {
+                let template = null;
+                
+                // Try to find by creature_id
+                if (userCreature.creature_id) {
+                    const creatureIdString = userCreature.creature_id.toString();
+                    template = templateMap[creatureIdString];
+                }
+                
+                // If not found, try by creature_type
+                if (!template && userCreature.creature_type) {
+                    template = templateByTypeMap[userCreature.creature_type];
+                }
+                
+                // If still not found, get the first template matching the creature name
+                if (!template && userCreature.name) {
+                    template = creatureTemplates.find(t => 
+                        t.name.toLowerCase() === userCreature.name.toLowerCase() ||
+                        t.creature_Id.toLowerCase() === userCreature.name.toLowerCase()
+                    );
+                }
+                
+                // If no template found, use first available or continue
+                if (!template && creatureTemplates.length > 0) {
+                    template = creatureTemplates[0];
+                }
+                
+                if (!template) {
+                    // Just add the original data if no template found
+                    enhancedCreatures.push(userCreature);
+                    continue;
+                }
+                
+                // Get level stats for current level
+                const level = userCreature.level || 1;
+                const levelStats = template.level_stats.find(stat => stat.level === level) || 
+                                  (template.level_stats.length > 0 ? template.level_stats[0] : null);
+                
+                // Create enhanced creature data with full details
+                const enhancedCreature = {
+                    _id: userCreature._id,
+                    creature_id: userCreature.creature_id || template._id,
+                    creature_type: userCreature.creature_type || template.creature_Id,
+                    name: template.name,
+                    type: template.type,
+                    level: level,
+                    building_index: userCreature.building_index,
+                    base_attack: template.base_attack,
+                    base_health: template.base_health,
+                    attack: levelStats ? levelStats.attack : template.base_attack,
+                    health: levelStats ? levelStats.health : template.base_health,
+                    gold_coins: levelStats ? levelStats.gold : template.gold_coins,
+                    arcane_energy: levelStats ? levelStats.arcane_energy : template.arcane_energy,
+                    speed: template.speed,
+                    armor: template.armor,
+                    critical_damage_percentage: template.critical_damage_percentage,
+                    critical_damage: template.critical_damage,
+                    image: template.image,
+                    description: template.description,
+                    count: userCreature.count || 1
+                };
+                
+                enhancedCreatures.push(enhancedCreature);
+            }
+            
+            // Create processed building with enhanced creatures
+            processedBuildings.push({
                 _id: building._id,
                 buildingId: building.buildingId,
                 name: building.name,
                 position: building.position,
-                gold_coins: building.gold_coins,
-                last_collected: building.last_collected || user.logout_time,
                 size: building.size,
                 index: building.index,
-                is_creature_building: false,
-                creature_ids: [], // Simple IDs for backward compatibility
-                creatures: []    // Full creature data
-            };
-
-            // Create a list of creatures for this building
-            const buildingCreatures = [];
-            
-            // First add creatures that are already objects in the user.creatures array
-            if (userCreatures.length > 0) {
-                userCreatures.forEach(creature => {
-                    if (creature.building_index === building.index) {
-                        buildingCreatures.push(creature);
-                    }
-                });
-            }
-            
-            // Look for creature IDs that belong to this building
-            // We need to check each creature from the database to see if it belongs to this building
-            creatureIds.forEach(creatureId => {
-                const creature = creaturesByStringId[creatureId];
-                if (creature && creature.building_index === building.index) {
-                    buildingCreatures.push(creature);
-                }
+                gold_coins: building.gold_coins,
+                last_collected: building.last_collected,
+                creature_ids: enhancedCreatures.map(c => c._id),
+                creatures: enhancedCreatures
             });
-
-            // Check if building has creatures
-            if (buildingCreatures.length > 0) {
-                buildingData.is_creature_building = true;
-                
-                // Process each creature and add complete data
-                buildingCreatures.forEach(creatureEntry => {
-                    const creatureId = creatureEntry._id?.toString() || creatureEntry;
-                    
-                    // Get basic creature data from DB or user object
-                    let creature = creatureEntry;
-                    if (typeof creatureEntry === 'string') {
-                        creature = creaturesByStringId[creatureEntry];
-                    }
-                    
-                    // Skip if this is just an ID and we couldn't find the creature
-                    if (!creature && typeof creatureEntry === 'string') {
-                        console.log(`Couldn't find creature with ID ${creatureEntry}`);
-                        return;
-                    }
-                    
-                    // Get basic creature info for the simple array
-                    buildingData.creature_ids.push({
-                        creature_id: creatureId,
-                        creature_type: creature?.creature_type || 'unknown',
-                        level: creature?.level || 1,
-                        count: creature?.count || 1
-                    });
-                    
-                    // Start with data from the creature entry itself
-                    const creatureData = {
-                        _id: creatureId,
-                        creature_id: creatureId,
-                        creature_type: creature?.creature_type,
-                        name: creature?.name,
-                        type: creature?.type,
-                        level: creature?.level || 1,
-                        base_attack: creature?.base_attack,
-                        base_health: creature?.base_health,
-                        attack: creature?.attack,
-                        health: creature?.health,
-                        gold_coins: creature?.gold_coins,
-                        image: creature?.image,
-                        description: creature?.description,
-                        building_index: building.index,
-                        count: creature?.count || 1
-                    };
-                    
-                    // Use template data to fill in missing values if we have a creature_type
-                    if (creatureData.creature_type && templatesByType[creatureData.creature_type]) {
-                        const template = templatesByType[creatureData.creature_type];
-                        
-                        if (!creatureData.name) creatureData.name = template.name;
-                        if (!creatureData.type) creatureData.type = template.type;
-                        if (!creatureData.base_attack) creatureData.base_attack = template.base_attack;
-                        if (!creatureData.base_health) creatureData.base_health = template.base_health;
-                        if (!creatureData.gold_coins) creatureData.gold_coins = template.gold_coins;
-                        if (!creatureData.image) creatureData.image = template.image;
-                        if (!creatureData.description) creatureData.description = template.description;
-                    }
-                    
-                    // If we have a direct match by ID in the templates, use that too
-                    if (templatesById[creatureId]) {
-                        const template = templatesById[creatureId];
-                        
-                        if (!creatureData.creature_type) creatureData.creature_type = template.creature_Id;
-                        if (!creatureData.name) creatureData.name = template.name;
-                        if (!creatureData.type) creatureData.type = template.type;
-                        if (!creatureData.base_attack) creatureData.base_attack = template.base_attack;
-                        if (!creatureData.base_health) creatureData.base_health = template.base_health;
-                        if (!creatureData.gold_coins) creatureData.gold_coins = template.gold_coins;
-                        if (!creatureData.image) creatureData.image = template.image;
-                        if (!creatureData.description) creatureData.description = template.description;
-                    }
-                    
-                    // Calculate attack and health if missing
-                    if (!creatureData.attack && creatureData.base_attack) {
-                        let baseAttack = creatureData.base_attack;
-                        let attackGrowth = 0.03; // Default growth
-                        
-                        // Adjust growth based on type
-                        if (creatureData.type) {
-                            switch(creatureData.type.toLowerCase()) {
-                                case 'legendary': attackGrowth = 0.04; break;
-                                case 'elite': attackGrowth = 0.05; break;
-                                case 'epic': attackGrowth = 0.04; break;
-                            }
-                        }
-                        
-                        // Calculate attack with compounding growth
-                        let attack = baseAttack;
-                        for (let level = 1; level < creatureData.level; level++) {
-                            attack += Math.round(attack * attackGrowth);
-                        }
-                        creatureData.attack = attack;
-                    }
-                    
-                    if (!creatureData.health && creatureData.base_health) {
-                        let baseHealth = creatureData.base_health;
-                        let healthGrowth = 0.03; // Default growth
-                        
-                        // Adjust growth based on type
-                        if (creatureData.type) {
-                            switch(creatureData.type.toLowerCase()) {
-                                case 'legendary': healthGrowth = 0.04; break;
-                                case 'elite': healthGrowth = 0.05; break;
-                                case 'epic': healthGrowth = 0.04; break;
-                            }
-                        }
-                        
-                        // Calculate health with compounding growth
-                        let health = baseHealth;
-                        for (let level = 1; level < creatureData.level; level++) {
-                            health += Math.round(health * healthGrowth);
-                        }
-                        creatureData.health = health;
-                    }
-                    
-                    // Set defaults for missing fields
-                    if (!creatureData.name) creatureData.name = "Unknown Creature";
-                    if (!creatureData.type) creatureData.type = "common";
-                    if (!creatureData.attack) creatureData.attack = creatureData.base_attack || 10;
-                    if (!creatureData.health) creatureData.health = creatureData.base_health || 50;
-                    if (!creatureData.base_attack) creatureData.base_attack = 10;
-                    if (!creatureData.base_health) creatureData.base_health = 50;
-                    if (!creatureData.gold_coins) creatureData.gold_coins = 10;
-                    if (!creatureData.image) creatureData.image = "default.png";
-                    if (!creatureData.description) creatureData.description = "A mysterious creature";
-                    
-                    buildingData.creatures.push(creatureData);
-                });
-            }
-
-            return buildingData;
-        });
-
-        return {
-            success: true,
-            message: `User buildings (${formattedBuildings.length}) and creatures fetched successfully`,
-            data: {
-                buildings: formattedBuildings
-            }
-        };
+        }
+        
+        return { buildings: processedBuildings };
     } catch (error) {
-        console.error('Error fetching user buildings:', error);
+        console.error('Error in getUserBuildings:', error);
         throw new Error(`Error fetching user buildings: ${error.message}`);
     }
 }
@@ -2554,6 +2421,325 @@ async function removeBoostFromUser(userIdParam, boostIdParam) {
     }
 }
 
+// Add rumble construction area
+async function addRumbleConstructionArea(userIdParam, coordinates, timeInMinutes) {
+    try {
+        const User = require('../models/user');
+        
+        // Find the user
+        const user = await User.findOne({ userId: userIdParam });
+        if (!user) {
+            throw new Error('User not found');
+        }
+        
+        // Validate inputs
+        if (!coordinates || typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
+            throw new Error('Valid coordinates (x, y) are required');
+        }
+        
+        if (!timeInMinutes || typeof timeInMinutes !== 'number' || timeInMinutes <= 0) {
+            throw new Error('Valid timeInMinutes (positive number) is required');
+        }
+        
+        // Initialize rumble_construction_area array if it doesn't exist
+        if (!user.rumble_construction_area) {
+            user.rumble_construction_area = [];
+        }
+        
+        // Check if these coordinates are already in construction
+        const existingArea = user.rumble_construction_area.find(
+            area => area.x === coordinates.x && area.y === coordinates.y
+        );
+        
+        if (existingArea) {
+            throw new Error('This area is already under construction');
+        }
+        
+        // Check if these coordinates are already cleared
+        if (user.clear_rumble && user.clear_rumble.some(
+            area => area.x === coordinates.x && area.y === coordinates.y
+        )) {
+            throw new Error('This area is already cleared');
+        }
+        
+        // Calculate finished time (current time + timeInMinutes)
+        const currentTime = new Date();
+        const finishedTime = new Date(currentTime.getTime() + timeInMinutes * 60000); // convert minutes to milliseconds
+        
+        // Add to rumble_construction_area array
+        user.rumble_construction_area.push({
+            x: coordinates.x,
+            y: coordinates.y,
+            finished_time: finishedTime,
+            started_time: currentTime
+        });
+        
+        // Mark the field as modified to ensure it gets saved
+        user.markModified('rumble_construction_area');
+        
+        // Save the user
+        await user.save();
+        
+        return {
+            userId: user.userId,
+            coordinates: {
+                x: coordinates.x,
+                y: coordinates.y
+            },
+            started_time: currentTime,
+            finished_time: finishedTime,
+            time_in_minutes: timeInMinutes
+        };
+    } catch (error) {
+        console.error('Error adding rumble construction area:', error);
+        throw new Error(`Error adding rumble construction area: ${error.message}`);
+    }
+}
+
+// Check rumble construction area
+async function checkRumbleConstructionArea(userIdParam, coordinates) {
+    try {
+        const User = require('../models/user');
+        
+        // Find the user
+        const user = await User.findOne({ userId: userIdParam });
+        if (!user) {
+            throw new Error('User not found');
+        }
+        
+        // Validate coordinates
+        if (!coordinates || typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
+            throw new Error('Valid coordinates (x, y) are required');
+        }
+        
+        // Initialize arrays if they don't exist
+        if (!user.rumble_construction_area) {
+            user.rumble_construction_area = [];
+        }
+        
+        if (!user.clear_rumble) {
+            user.clear_rumble = [];
+        }
+        
+        // Check if area is already cleared
+        if (user.clear_rumble.some(area => area.x === coordinates.x && area.y === coordinates.y)) {
+            return {
+                userId: user.userId,
+                coordinates: {
+                    x: coordinates.x,
+                    y: coordinates.y
+                },
+                status: 'cleared',
+                message: 'This area is already cleared'
+            };
+        }
+        
+        // Find the area in construction
+        const areaIndex = user.rumble_construction_area.findIndex(
+            area => area.x === coordinates.x && area.y === coordinates.y
+        );
+        
+        // If area not found in construction
+        if (areaIndex === -1) {
+            return {
+                userId: user.userId,
+                coordinates: {
+                    x: coordinates.x,
+                    y: coordinates.y
+                },
+                status: 'not_started',
+                message: 'This area is not under construction'
+            };
+        }
+        
+        const area = user.rumble_construction_area[areaIndex];
+        const currentTime = new Date();
+        
+        // Check if construction is complete
+        if (currentTime >= area.finished_time) {
+            // Move from construction to cleared
+            const clearedArea = {
+                x: area.x,
+                y: area.y,
+                construction_started: area.started_time,
+                construction_finished: area.finished_time,
+                cleared_time: currentTime
+            };
+            
+            // Remove from construction array
+            user.rumble_construction_area.splice(areaIndex, 1);
+            
+            // Add to cleared array
+            user.clear_rumble.push(clearedArea);
+            
+            // Mark fields as modified
+            user.markModified('rumble_construction_area');
+            user.markModified('clear_rumble');
+            
+            // Save the user
+            await user.save();
+            
+            return {
+                userId: user.userId,
+                coordinates: {
+                    x: coordinates.x,
+                    y: coordinates.y
+                },
+                status: 'cleared',
+                message: 'Construction complete! Area cleared.',
+                construction_details: {
+                    started_time: area.started_time,
+                    finished_time: area.finished_time,
+                    cleared_time: currentTime
+                }
+            };
+        } else {
+            // Construction still in progress
+            const remainingTime = area.finished_time.getTime() - currentTime.getTime();
+            const remainingMinutes = Math.ceil(remainingTime / 60000); // convert ms to minutes
+            
+            return {
+                userId: user.userId,
+                coordinates: {
+                    x: coordinates.x,
+                    y: coordinates.y
+                },
+                status: 'in_progress',
+                message: 'Construction still in progress',
+                construction_details: {
+                    started_time: area.started_time,
+                    finished_time: area.finished_time,
+                    remaining_minutes: remainingMinutes
+                }
+            };
+        }
+    } catch (error) {
+        console.error('Error checking rumble construction area:', error);
+        throw new Error(`Error checking rumble construction area: ${error.message}`);
+    }
+}
+
+// Get all rumble construction and cleared areas
+async function getUserRumbleAreas(userIdParam) {
+    try {
+        const User = require('../models/user');
+        
+        // Find the user
+        const user = await User.findOne({ userId: userIdParam });
+        if (!user) {
+            throw new Error('User not found');
+        }
+        
+        // Initialize arrays if they don't exist
+        if (!user.rumble_construction_area) {
+            user.rumble_construction_area = [];
+        }
+        
+        if (!user.clear_rumble) {
+            user.clear_rumble = [];
+        }
+        
+        // Process construction areas to add remaining time
+        const currentTime = new Date();
+        const constructionAreas = user.rumble_construction_area.map(area => {
+            const remainingTime = area.finished_time.getTime() - currentTime.getTime();
+            const remainingMinutes = Math.ceil(remainingTime / 60000); // convert ms to minutes
+            
+            return {
+                x: area.x,
+                y: area.y,
+                started_time: area.started_time,
+                finished_time: area.finished_time,
+                remaining_minutes: remainingMinutes > 0 ? remainingMinutes : 0,
+                status: remainingMinutes > 0 ? 'in_progress' : 'ready_to_clear'
+            };
+        });
+        
+        // Return both construction and cleared areas
+        return {
+            userId: user.userId,
+            construction_areas: constructionAreas,
+            cleared_areas: user.clear_rumble
+        };
+    } catch (error) {
+        console.error('Error getting rumble areas:', error);
+        throw new Error(`Error getting rumble areas: ${error.message}`);
+    }
+}
+
+const clearRumbleConstructionArea = async (userIdParam, x, y) => {
+    try {
+        const User = require('../models/user');
+        
+        // Find the user by userId first
+        let user = await User.findOne({ userId: userIdParam });
+        
+        // If not found, try to find by MongoDB _id (if it's a valid ObjectId)
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Initialize arrays if not present
+        if (!user.rumble_construction_area) {
+            user.rumble_construction_area = [];
+        }
+        if (!user.clear_rumble) {
+            user.clear_rumble = [];
+        }
+
+        // Check if the coordinates match any construction area
+        const areaIndex = user.rumble_construction_area.findIndex(
+            area => area.x === x && area.y === y
+        );
+
+        if (areaIndex === -1) {
+            throw new Error('No construction area found at these coordinates');
+        }
+
+        const area = user.rumble_construction_area[areaIndex];
+        
+        // Calculate if the construction is complete
+        const constructionTime = new Date(area.construction_started);
+        const currentTime = new Date();
+        const timeElapsed = (currentTime - constructionTime) / 1000; // in seconds
+        
+        if (timeElapsed < area.construction_time) {
+            const remainingTime = area.construction_time - timeElapsed;
+            throw new Error(`Construction not yet complete. ${remainingTime.toFixed(0)} seconds remaining.`);
+        }
+
+        // If construction is complete, remove from construction array and add to cleared array
+        const clearedArea = {
+            x: area.x,
+            y: area.y,
+            cleared_at: new Date()
+        };
+
+        // Remove from construction array
+        user.rumble_construction_area.splice(areaIndex, 1);
+        
+        // Add to cleared array
+        user.clear_rumble.push(clearedArea);
+
+        // Save the updated user
+        await user.save();
+
+        return {
+            userId: user.userId,
+            area: clearedArea,
+            message: 'Construction area cleared successfully'
+        };
+    } catch (error) {
+        console.error('Error clearing rumble construction area:', error);
+        throw error;
+    }
+};
+
+// Export the functions
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -2574,5 +2760,9 @@ module.exports = {
     updateBattleSelectedCreatures,
     mergeCreatures,
     addBoostToUser,
-    removeBoostFromUser
+    removeBoostFromUser,
+    addRumbleConstructionArea,
+    checkRumbleConstructionArea,
+    getUserRumbleAreas,
+    clearRumbleConstructionArea
 };

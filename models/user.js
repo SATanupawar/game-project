@@ -138,6 +138,16 @@ const userSchema = new mongoose.Schema({
         building_index: {
             type: Number,
             required: true
+        },
+        creature_type: String,
+        base_attack: Number,
+        base_health: Number,
+        attack: Number,
+        health: Number,
+        gold_coins: Number,
+        count: {
+            type: Number,
+            default: 1
         }
     }],
     battle_selected_creatures: [battleCreatureSchema],
@@ -150,6 +160,23 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Currency'
     },
+    rumble_construction_area: [
+        {
+            x: Number,
+            y: Number,
+            started_time: Date,
+            finished_time: Date
+        }
+    ],
+    clear_rumble: [
+        {
+            x: Number,
+            y: Number,
+            construction_started: Date,
+            construction_finished: Date,
+            cleared_time: Date
+        }
+    ],
     logout_time: {
         type: Date,
         default: Date.now
