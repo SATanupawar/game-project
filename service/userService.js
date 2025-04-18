@@ -2697,7 +2697,8 @@ const clearRumbleConstructionArea = async (userIdParam, x, y) => {
         );
 
         if (areaIndex === -1) {
-            throw new Error('No construction area found at these coordinates');
+            throw new Error('No construction area found at these coordinates or construction area is already cleared');
+            
         }
 
         const area = user.rumble_construction_area[areaIndex];
