@@ -3139,4 +3139,110 @@ router.post('/:userId/building-construction/cleanup', async (req, res) => {
     }
 });
 
+// Add specific buildings from construction array to user buildings
+router.post('/:userId/building-construction', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { buildingIndexes } = req.body;
+        
+        console.log(`Processing specific buildings from construction for user: ${userId}`, buildingIndexes);
+        
+        // Validate input
+        if (!buildingIndexes || !Array.isArray(buildingIndexes)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Building indexes must be provided as an array'
+            });
+        }
+        
+        const User = require('../models/user');
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        if (!user.building_construction || user.building_construction.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No buildings under construction'
+            });
+        }
+        
+        const currentTime = new Date();
+        const completedBuildings = [];
+        const remainingConstructions = [];
+        const notFoundIndexes = [];
+        const notCompletedIndexes = [];
+        
+        // Process each building in construction array
+        user.building_construction.forEach(building => {
+            // Check if this building's index is in the requested indexes
+            if (buildingIndexes.includes(building.index)) {
+                // Check if construction is complete
+                if (building.finished_time <= currentTime) {
+                    // Add to completed buildings for user
+                    const completedBuilding = {
+                        ...building.toObject(),
+                        reserveCoins: 0,
+                        last_collected: new Date()
+                    };
+                    
+                    // Remove construction-specific fields
+                    delete completedBuilding.started_time;
+                    delete completedBuilding.finished_time;
+                    
+                    // Add to user's buildings array
+                    user.buildings.push(completedBuilding);
+                    completedBuildings.push(completedBuilding);
+                } else {
+                    // Building is in the list but not completed yet
+                    remainingConstructions.push(building);
+                    notCompletedIndexes.push(building.index);
+                }
+            } else {
+                // Not in requested list, keep in construction array
+                remainingConstructions.push(building);
+            }
+        });
+        
+        // Find indexes that weren't found in the construction array
+        buildingIndexes.forEach(index => {
+            const found = user.building_construction.some(b => b.index === index);
+            if (!found) {
+                notFoundIndexes.push(index);
+            }
+        });
+        
+        // Update the user's building_construction array
+        user.building_construction = remainingConstructions;
+        
+        // Save the updated user
+        await user.save();
+        
+        res.status(200).json({
+            success: true,
+            message: `Processed ${completedBuildings.length} buildings from construction`,
+            data: {
+                completedBuildings,
+                notCompletedIndexes,
+                notFoundIndexes,
+                remainingConstructions: remainingConstructions.length
+            }
+        });
+    } catch (error) {
+        console.error('Error processing buildings from construction:', error);
+        
+        res.status(500).json({
+            success: false,
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 module.exports = router;
