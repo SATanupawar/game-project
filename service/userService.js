@@ -458,7 +458,7 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
         const randomIndex = Math.floor(1000000000 + Math.random() * 9000000000);
         console.log('Generated building index:', randomIndex);
 
-        // Create new building object
+        // Create new building object with all required fields
         const newBuilding = {
             buildingId: buildingTemplate.buildingId,
             name: buildingTemplate.name,
@@ -466,18 +466,20 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             position: position,
             size: buildingTemplate.size,
             index: randomIndex,
-            reserveCoins: 0 // Initialize reserveCoins here
+            description: buildingTemplate.description,
+            image: buildingTemplate.image,
+            reserveCoins: 0,
+            last_collected: new Date()
         };
         console.log('Created new building object:', newBuilding);
 
-        // Add building to user
-        user.buildings.push(newBuilding);
-        console.log('Added building to user');
-
-        // Prepare response
-        const response = {
+        // Check if the building has construction time
+        const constructionTime = buildingTemplate.constructionTime || 0;
+        console.log('Building construction time (minutes):', constructionTime);
+        
+        let response = {
             success: true,
-            message: "Building assigned to user successfully",
+            message: "",
             data: {
                 user: {
                     userId: user.userId,
@@ -486,8 +488,45 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
                 building: newBuilding
             }
         };
+        
+        // If construction time is set, add to building_construction array
+        if (constructionTime > 0) {
+            // Calculate start and finish times
+            const currentTime = new Date();
+            const finishTime = new Date(currentTime.getTime() + (constructionTime * 60000)); // convert minutes to milliseconds
+            
+            // Create construction building object with all required fields
+            const constructionBuilding = {
+                ...newBuilding,
+                started_time: currentTime,
+                finished_time: finishTime
+            };
+            
+            // Initialize the building_construction array if it doesn't exist
+            if (!user.building_construction) {
+                user.building_construction = [];
+            }
+            
+            // Add to construction array
+            user.building_construction.push(constructionBuilding);
+            
+            // Update response with construction details
+            response.message = `Building construction started. Will be completed in ${constructionTime} minutes.`;
+            response.data.constructionDetails = {
+                started_time: currentTime,
+                finished_time: finishTime,
+                remaining_minutes: constructionTime
+            };
+            
+            console.log('Building added to construction queue, will complete at:', finishTime);
+        } else {
+            // No construction time, add directly to buildings array
+            user.buildings.push(newBuilding);
+            response.message = "Building assigned to user successfully";
+            console.log('Building assigned directly to user');
+        }
 
-        // If creatureIdParam is provided, add creature to the building
+        // If creatureIdParam is provided, handle creature assignment
         if (creatureIdParam) {
             console.log('Creature ID provided:', creatureIdParam);
             
@@ -499,11 +538,21 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
                 // Save building but return error about creature
                 await user.save();
                 console.log('Building saved but creature not found');
-                return {
-                    success: true,
-                    message: "Building assigned but creature not found",
-                    data: response.data
-                };
+                
+                // Modify message based on if building is under construction
+                if (constructionTime > 0) {
+                    return {
+                        success: true,
+                        message: "Building construction started but creature not found.",
+                        data: response.data
+                    };
+                } else {
+                    return {
+                        success: true,
+                        message: "Building assigned but creature not found",
+                        data: response.data
+                    };
+                }
             }
 
             // Set creature level to 1 directly using setLevel method
@@ -511,6 +560,16 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
                 creatureTemplate.setLevel(1);
                 await creatureTemplate.save();
                 console.log('Set creature level to 1');
+            }
+            
+            // If building is under construction, we can't add creatures yet
+            if (constructionTime > 0) {
+                await user.save();
+                return {
+                    success: true,
+                    message: "Building construction started. Creatures can be added once construction is complete.",
+                    data: response.data
+                };
             }
 
             // Create new creature instance
@@ -1385,9 +1444,10 @@ async function getUserBuildings(userIdParam) {
             throw new Error('User not found');
         }
 
-        // If no buildings, return empty array
-        if (!user.buildings || user.buildings.length === 0) {
-            return { buildings: [] };
+        // If no buildings and no buildings under construction, return empty array
+        if ((!user.buildings || user.buildings.length === 0) && 
+            (!user.building_construction || user.building_construction.length === 0)) {
+            return { buildings: [], buildings_under_construction: [] };
         }
 
         // Get all creature templates for reference
@@ -1407,7 +1467,7 @@ async function getUserBuildings(userIdParam) {
         // Process buildings with enhanced creatures
         const processedBuildings = [];
         
-        for (const building of user.buildings) {
+        for (const building of user.buildings || []) {
             // Find creatures assigned to this building
             const buildingCreatures = user.creatures.filter(
                 creature => creature.building_index === building.index
@@ -1496,7 +1556,35 @@ async function getUserBuildings(userIdParam) {
             });
         }
         
-        return { buildings: processedBuildings };
+        // Process buildings under construction
+        const buildingsUnderConstruction = [];
+        const currentTime = new Date();
+        
+        if (user.building_construction && user.building_construction.length > 0) {
+            for (const building of user.building_construction) {
+                const finishTime = new Date(building.finished_time);
+                const remainingTimeMs = finishTime - currentTime;
+                const remainingMinutes = Math.max(0, Math.ceil(remainingTimeMs / 60000));
+                
+                buildingsUnderConstruction.push({
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    position: building.position,
+                    size: building.size,
+                    index: building.index,
+                    gold_coins: building.gold_coins,
+                    started_time: building.started_time,
+                    finished_time: building.finished_time,
+                    remaining_minutes: remainingMinutes,
+                    under_construction: true
+                });
+            }
+        }
+        
+        return { 
+            buildings: processedBuildings,
+            buildings_under_construction: buildingsUnderConstruction
+        };
     } catch (error) {
         console.error('Error in getUserBuildings:', error);
         throw new Error(`Error fetching user buildings: ${error.message}`);
@@ -2751,6 +2839,126 @@ const clearRumbleConstructionArea = async (userIdParam, x, y) => {
     }
 };
 
+// Check building construction status and move completed buildings to user buildings array
+async function checkBuildingConstructionStatus(userIdParam) {
+    try {
+        console.log('Checking building construction status for user:', userIdParam);
+        
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            return { success: false, message: "User not found" };
+        }
+        
+        // If no buildings under construction, return early
+        if (!user.building_construction || user.building_construction.length === 0) {
+            return { 
+                success: true, 
+                message: "No buildings under construction", 
+                data: { 
+                    buildings_under_construction: [], 
+                    completed_buildings: [] 
+                } 
+            };
+        }
+        
+        const currentTime = new Date();
+        const completedBuildings = [];
+        const remainingBuildings = [];
+        
+        // Process each building under construction
+        for (const building of user.building_construction) {
+            // Check if building data is complete
+            if (!building.buildingId || !building.finished_time) {
+                console.warn(`Skipping incomplete building construction record: ${building._id}`);
+                continue;
+            }
+            
+            const finishTime = new Date(building.finished_time);
+            
+            // Check if construction is completed
+            if (currentTime >= finishTime) {
+                console.log(`Building ${building.name} (${building.index}) construction completed`);
+                
+                // Add building to user's buildings array
+                const completedBuilding = {
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    gold_coins: building.gold_coins,
+                    position: building.position,
+                    size: building.size,
+                    index: building.index,
+                    reserveCoins: 0,
+                    last_collected: new Date()
+                };
+                
+                user.buildings.push(completedBuilding);
+                completedBuildings.push({
+                    ...completedBuilding,
+                    construction_completed: true
+                });
+            } else {
+                // Building still under construction
+                const remainingTimeMs = finishTime - currentTime;
+                const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+                
+                remainingBuildings.push({
+                    ...building.toObject(),
+                    remaining_minutes: remainingMinutes,
+                    construction_completed: false
+                });
+            }
+        }
+        
+        // Filter out incomplete building data
+        const validRemainingBuildings = remainingBuildings.filter(b => 
+            b.buildingId && b.name && b.position && b.size && b.index);
+        
+        // If we found and processed any buildings, update the user
+        if (completedBuildings.length > 0 || validRemainingBuildings.length < user.building_construction.length) {
+            // Update building_construction to remove completed buildings and any invalid entries
+            user.building_construction = validRemainingBuildings.map(b => ({
+                buildingId: b.buildingId,
+                name: b.name,
+                gold_coins: b.gold_coins,
+                position: b.position,
+                size: b.size,
+                index: b.index,
+                started_time: b.started_time,
+                finished_time: b.finished_time
+            }));
+            
+            // Save user changes
+            await user.save();
+            
+            console.log(`Updated user: removed ${completedBuildings.length} completed buildings and fixed invalid entries`);
+        }
+        
+        // Prepare response
+        const message = completedBuildings.length > 0 
+            ? `${completedBuildings.length} buildings completed and moved to user buildings` 
+            : "No buildings completed yet";
+            
+        return {
+            success: true,
+            message: message,
+            data: {
+                buildings_under_construction: validRemainingBuildings,
+                completed_buildings: completedBuildings
+            }
+        };
+    } catch (error) {
+        console.error('Error in checkBuildingConstructionStatus:', error);
+        return {
+            success: false,
+            message: `Error: ${error.message}`
+        };
+    }
+}
+
 // Export the functions
 module.exports = {
     getUserWithDetails,
@@ -2776,5 +2984,6 @@ module.exports = {
     addRumbleConstructionArea,
     checkRumbleConstructionArea,
     getUserRumbleAreas,
-    clearRumbleConstructionArea
+    clearRumbleConstructionArea,
+    checkBuildingConstructionStatus
 };

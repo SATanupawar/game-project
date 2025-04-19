@@ -231,28 +231,32 @@ async function createCreaturesAndBuildings() {
         // Create 4 buildings
         const buildings = [
             {
-                buildingId: 'building1',
-                name: 'Dark Library',
-                gold_coins: 30,
-                size: { x: 2, y: 3 }
+                buildingId: 'Outpost',
+                name: 'Outpost',
+                gold_coins: 1800,
+                size: { x: 2, y: 2 },
+                constructionTime: 5 // 5 minutes
             },
             {
-                buildingId: 'building2',
-                name: 'Beast Sanctum',
-                gold_coins: 40,
-                size: { x: 3, y: 3 }
+                buildingId: 'Hero\'s Tomb',
+                name: 'Hero\'s Tomb',
+                gold_coins: 1200,
+                size: { x: 3, y: 2 },
+                constructionTime: 30 // 30 minutes
             },
             {
-                buildingId: 'building3',
-                name: 'Fortress',
-                gold_coins: 50,
-                size: { x: 3, y: 3 }
+                buildingId: 'Bell Towers',
+                name: 'Bell Towers',
+                gold_coins: 1800,
+                size: { x: 3, y: 3 },
+                constructionTime: 120 // 120 minutes (2 hours)
             },
             {
-                buildingId: 'building4',
-                name: 'Tavern',
-                gold_coins: 35,
-                size: { x: 3, y: 2 }
+                buildingId: 'Warg Pen',
+                name: 'Warg Pen',
+                gold_coins: 1200,
+                size: { x: 3, y: 2 },
+                constructionTime: 120 // 120 minutes (2 hours)
             }
         ];
 

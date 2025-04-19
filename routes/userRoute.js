@@ -3018,4 +3018,125 @@ router.post('/:userId/rumble-areas/clear', async (req, res) => {
     }
 });
 
+// Check building construction status
+router.get('/:userId/building-construction', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Checking building construction status for user: ${userId}`);
+        
+        const result = await userService.checkBuildingConstructionStatus(userId);
+        
+        // Clean up the response to remove Mongoose-specific properties
+        const cleanResponse = {
+            success: true,
+            message: result.message || 'Building construction status checked',
+            data: {
+                buildings_under_construction: result.data?.buildings_under_construction?.map(building => ({
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    gold_coins: building.gold_coins,
+                    position: building.position,
+                    size: building.size,
+                    index: building.index,
+                    started_time: building.started_time,
+                    finished_time: building.finished_time,
+                    remaining_minutes: building.remaining_minutes,
+                    construction_completed: building.construction_completed
+                })) || [],
+                completed_buildings: result.data?.completed_buildings?.map(building => ({
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    gold_coins: building.gold_coins,
+                    position: building.position,
+                    size: building.size,
+                    index: building.index,
+                    reserveCoins: building.reserveCoins,
+                    last_collected: building.last_collected,
+                    construction_completed: building.construction_completed
+                })) || []
+            }
+        };
+        
+        res.status(200).json(cleanResponse);
+    } catch (error) {
+        console.error('Error checking building construction status:', error);
+        
+        // Determine appropriate status code based on error message
+        let statusCode = 500;
+        if (error.message.includes('not found')) {
+            statusCode = 404;
+        }
+        
+        res.status(statusCode).json({
+            success: false,
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
+// Cleanup building construction data
+router.post('/:userId/building-construction/cleanup', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Cleaning up building construction data for user: ${userId}`);
+        
+        const User = require('../models/user');
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Save original count
+        const originalCount = user.building_construction ? user.building_construction.length : 0;
+        
+        // Filter out incomplete building construction entries
+        user.building_construction = user.building_construction.filter(building => 
+            building.buildingId && 
+            building.name && 
+            building.position && 
+            building.position.x && 
+            building.position.y && 
+            building.size && 
+            building.size.x && 
+            building.size.y && 
+            building.index && 
+            building.started_time && 
+            building.finished_time
+        );
+        
+        // Save the updated user
+        await user.save();
+        
+        const newCount = user.building_construction.length;
+        
+        res.status(200).json({
+            success: true,
+            message: `Cleaned up building construction data. Removed ${originalCount - newCount} invalid entries.`,
+            data: {
+                previousCount: originalCount,
+                currentCount: newCount,
+                buildings: user.building_construction.map(b => ({
+                    buildingId: b.buildingId,
+                    name: b.name,
+                    position: b.position,
+                    index: b.index
+                }))
+            }
+        });
+    } catch (error) {
+        console.error('Error cleaning up building construction data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 module.exports = router;
