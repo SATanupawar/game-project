@@ -235,14 +235,26 @@ router.get('/:userId', async (req, res) => {
         const { userId } = req.params;
         console.log(`Fetching details for user: ${userId}`);
 
-        // Use the enhanced getUserWithDetails function
-        const userData = await userService.getUserWithDetails(userId);
+        // Get the User model
+        const User = require('../models/user');
         
-        // Return the full user data including enhanced creatures
+        // Find the user directly
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Process the user data before sending it
+        const processedData = userService.processUserResponse(user);
+        
+        // Return the user data with simplified stats
         res.status(200).json({
             success: true,
             message: 'User details fetched successfully',
-            data: userData
+            data: processedData
         });
     } catch (error) {
         console.error('Error fetching user details:', error);

@@ -12,6 +12,7 @@ const connectDB = require('./config/db');
 const userRoutes = require('./routes/userRoute');
 const buildingRoutes = require('./routes/buildingRoute');
 const creatureRoutes = require('./routes/creatureRoute');
+const cardPackRoutes = require('./routes/cardPackRoute');
 const User = require('./models/user');
 
 const app = express();
@@ -32,6 +33,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/users', userRoutes);
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/creatures', creatureRoutes);
+app.use('/api/card-packs', cardPackRoutes);
 
 // Get a user with buildings and creatures
 app.get('/api/users/:userId', async (req, res) => {

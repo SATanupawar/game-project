@@ -195,10 +195,65 @@ const userSchema = new mongoose.Schema({
             finished_time: Date
         }
     ],
+    // Card pack history - stores the last time each pack was opened
+    last_opened_packs: {
+        type: Map,
+        of: Date,
+        default: () => ({})
+    },
+    // Card pack related stats
+    card_stats: {
+        total_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        free_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        common_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        rare_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        epic_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        legendary_packs_opened: {
+            type: Number,
+            default: 0
+        },
+        creatures_obtained: {
+            type: Number,
+            default: 0
+        }
+    },
     logout_time: {
         type: Date,
         default: Date.now
-    }
+    },
+    // Add locked_creatures array for creatures obtained from card packs
+    locked_creatures: [{
+        creature_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Creature'
+        },
+        name: String,
+        rarity: String,
+        level: {
+            type: Number,
+            default: 1
+        },
+        creature_type: String,
+        obtained_at: {
+            type: Date,
+            default: Date.now
+        }
+    }]
 }, {
     timestamps: true,
     // Allow fields not specified in the schema

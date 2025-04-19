@@ -2959,6 +2959,32 @@ async function checkBuildingConstructionStatus(userIdParam) {
     }
 }
 
+/**
+ * Helper function to process user data before returning in response
+ * @param {Object} user - The user object to process
+ * @returns {Object} - Processed user object with simplified fields
+ */
+function processUserResponse(user) {
+    // Convert to regular object if it's a mongoose document
+    const userObj = user.toObject ? user.toObject() : {...user};
+    
+    // Simplify card stats - only keep total_packs_opened
+    if (userObj.card_stats) {
+        // Extract total packs opened as a direct property of the user
+        userObj.total_packs_opened = userObj.card_stats.total_packs_opened || 0;
+        
+        // Delete the full card_stats object
+        delete userObj.card_stats;
+    }
+    
+    // Remove last_opened_packs field
+    if (userObj.last_opened_packs) {
+        delete userObj.last_opened_packs;
+    }
+    
+    return userObj;
+}
+
 // Export the functions
 module.exports = {
     getUserWithDetails,
@@ -2985,5 +3011,6 @@ module.exports = {
     checkRumbleConstructionArea,
     getUserRumbleAreas,
     clearRumbleConstructionArea,
-    checkBuildingConstructionStatus
+    checkBuildingConstructionStatus,
+    processUserResponse
 };
