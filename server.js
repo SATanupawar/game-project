@@ -1,0 +1,571 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
+// console.log('Environment variables:');
+// console.log('MONGODB_URI:', process.env.MONGODB_URI);
+// console.log('PORT:', process.env.PORT);
+// console.log('NODE_ENV:', process.env.NODE_ENV);
+
+const express = require('express');
+const cors = require('cors');
+const connectDB = require('./config/db');
+const userRoutes = require('./routes/userRoute');
+const buildingRoutes = require('./routes/buildingRoute');
+const creatureRoutes = require('./routes/creatureRoute');
+const cardPackRoutes = require('./routes/cardPackRoute');
+const buildingDecorationRoutes = require('./routes/buildingDecorationRoute');
+const chestRoutes = require('./routes/chest');
+const arcaneEnergyRoutes = require('./routes/arcaneEnergyRoute');
+const pushNotificationRoutes = require('./routes/pushNotificationRoute');
+const User = require('./models/user');
+const Creature = require('./models/creature');
+const mongoose = require('mongoose');
+
+const app = express();
+
+// Connect to MongoDB
+connectDB();
+
+// Enhanced CORS configuration
+app.use(cors({
+    origin: '*',  // Allow requests from any origin
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Public routes
+app.use('/api/users', userRoutes); // Registration and user creation should remain public
+
+// Protected routes (require authentication)
+app.use('/api/buildings', buildingRoutes);
+app.use('/api/creatures', creatureRoutes);
+app.use('/api/card-packs', cardPackRoutes);
+app.use('/api/building-decorations', buildingDecorationRoutes);
+app.use('/api/chests', chestRoutes);
+app.use('/api/arcane-energy', arcaneEnergyRoutes);
+app.use('/api/push-notifications', pushNotificationRoutes);
+
+// Direct creature purchase route to bypass any conflicts with userRoutes
+app.post('/api/user/:userId/creature/purchase', async (req, res) => {
+  try {
+    console.log('Direct creature purchase route hit', req.params, req.body);
+    const { userId } = req.params;
+    const { creatureType } = req.body;
+    
+    if (!userId || !creatureType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, creatureType'
+      });
+    }
+    
+    // Find user
+    const User = require('./models/user');
+    const Creature = require('./models/creature');
+    
+    // Find the user
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Find the creature template
+    const creatureTemplate = await Creature.findOne({ creature_Id: creatureType });
+    if (!creatureTemplate) {
+      return res.status(400).json({
+        success: false,
+        message: `Creature type ${creatureType} not found`
+      });
+    }
+    
+    // Initialize user currency if it doesn't exist
+    if (!user.currency) {
+      user.currency = { anima: 0 };
+    }
+    
+    // Check if user has enough anima
+    const animaCost = creatureTemplate.anima_cost || 0;
+    if (!user.currency.anima || user.currency.anima < animaCost) {
+      return res.status(400).json({
+        success: false,
+        message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
+      });
+    }
+    
+    // Initialize creating_creatures array if it doesn't exist
+    if (!user.creating_creatures) {
+      user.creating_creatures = [];
+    }
+    
+    // Set current time and calculate finished time (this is required by schema)
+    // Even though we're not starting the unlock yet
+    const currentTime = new Date();
+    const unlockTimeMinutes = creatureTemplate.unlock_time || 10;
+    const finishedTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
+    
+    // Create creature purchase entry
+    const creaturePurchase = {
+      _id: new mongoose.Types.ObjectId(),
+      creature_id: creatureTemplate._id,
+      creature_type: creatureTemplate.creature_Id,
+      name: creatureTemplate.name,
+      started_time: currentTime, // Required by schema
+      finished_time: finishedTime, // Required by schema
+      unlock_time: unlockTimeMinutes,
+      level: 1,
+      base_attack: creatureTemplate.base_attack,
+      base_health: creatureTemplate.base_health,
+      gold_coins: creatureTemplate.gold_coins,
+      image: creatureTemplate.image || 'default.png',
+      description: creatureTemplate.description || '',
+      anima_cost: animaCost
+    };
+    
+    // Add to creating creatures array
+    user.creating_creatures.push(creaturePurchase);
+    
+    // Subtract anima from user currency
+    user.currency.anima -= animaCost;
+    user.markModified('currency');
+    user.markModified('creating_creatures');
+    
+    // Save user
+    await user.save();
+    
+    return res.status(200).json({
+      success: true,
+      message: `Creature ${creatureTemplate.name} purchased successfully with anima`,
+      data: {
+        creature: {
+          _id: creaturePurchase._id,
+          name: creatureTemplate.name,
+          type: creatureTemplate.type || 'common',
+          unlock_time: unlockTimeMinutes,
+          anima_cost: animaCost,
+          started_time: currentTime,
+          finished_time: finishedTime
+        },
+        user: {
+          userId: user.userId,
+          anima_balance: user.currency.anima,
+          creating_creatures_count: user.creating_creatures.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error in direct creature purchase route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error purchasing creature: ${error.message}`
+    });
+  }
+});
+
+// Keep old route for backward compatibility
+app.post('/api/direct-creature-purchase', async (req, res) => {
+  try {
+    const { userId, creatureType } = req.body;
+    // Forward the request to the new endpoint
+    res.redirect(307, `/api/user/${userId}/creature/purchase`);
+  } catch (error) {
+    console.error('Error in direct creature purchase route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error purchasing creature: ${error.message}`
+    });
+  }
+});
+
+// Direct route for assigning creatures to buildings
+app.post('/api/user/:userId/creature/assign-to-building', async (req, res) => {
+  try {
+    console.log('Direct creature assign-to-building route hit', req.params, req.body);
+    const { userId } = req.params;
+    const { creatureId, buildingId, buildingIndex, position } = req.body;
+    
+    if (!userId || !creatureId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, creatureId'
+      });
+    }
+
+    // Find user
+    const User = require('./models/user');
+    const Building = require('./models/building');
+    
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Find the creature
+    const creatureIndex = user.creatures.findIndex(
+      c => c._id.toString() === creatureId
+    );
+    
+    if (creatureIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Creature not found'
+      });
+    }
+
+    // Handle two different scenarios:
+    // 1. If buildingIndex is provided, add to existing building
+    // 2. If buildingId is provided, create a new building
+    
+    if (buildingIndex !== undefined) {
+      // Scenario 1: Add creature to existing building
+      const buildingIdx = parseInt(buildingIndex);
+      const existingBuilding = user.buildings.find(b => b.index === buildingIdx);
+      
+      if (!existingBuilding) {
+        return res.status(404).json({
+          success: false,
+          message: `Building with index ${buildingIdx} not found`
+        });
+      }
+      
+      // Check if there are already creatures in this building
+      const buildingCreatures = user.creatures.filter(c => c.building_index === buildingIdx);
+      if (buildingCreatures.length > 0) {
+        // Get the type of creatures currently in the building
+        const existingType = buildingCreatures[0].creature_type?.toLowerCase();
+        const newCreatureType = user.creatures[creatureIndex].creature_type?.toLowerCase();
+        
+        // If the types don't match, return an error
+        if (existingType && existingType !== newCreatureType) {
+          return res.status(400).json({
+            success: false,
+            message: `This building already contains ${buildingCreatures[0].name} creatures. You can only assign creatures of the same type to this building.`,
+            data: {
+              existing_creature_type: existingType,
+              new_creature_type: newCreatureType
+            }
+          });
+        }
+      }
+      
+      // Update the creature to reference the existing building
+      user.creatures[creatureIndex].building_index = buildingIdx;
+      
+      // Add creature to building's creatures array if it doesn't already exist
+      if (!existingBuilding.creatures) {
+        existingBuilding.creatures = [];
+      }
+      
+      if (!existingBuilding.creatures.some(id => id.toString() === user.creatures[creatureIndex]._id.toString())) {
+        existingBuilding.creatures.push(user.creatures[creatureIndex]._id);
+      }
+      
+      // Mark as modified
+      user.markModified('buildings');
+      user.markModified('creatures');
+      
+      // Save user
+      await user.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: `Creature assigned to existing building with index ${buildingIdx}`,
+        data: {
+          building: existingBuilding,
+          creature: user.creatures[creatureIndex]
+        }
+      });
+      
+    } else if (buildingId) {
+      // Scenario 2: Create a new building (existing functionality)
+      // Default to 'creature_building' if no buildingId is provided
+      const buildingTypeId = buildingId || 'creature_building';
+      
+      // Find the building template
+      const buildingTemplate = await Building.findOne({ buildingId: buildingTypeId });
+      if (!buildingTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: `Building type ${buildingTypeId} not found`
+        });
+      }
+      
+      // Generate a unique index for the new building
+      const newBuildingIndex = Math.floor(Math.random() * 10000000000);
+      
+      // Use provided position or default
+      const buildingPosition = position || { x: 10, y: 10 };
+      
+      // Create a new building for the user
+      const newBuilding = {
+        buildingId: buildingTemplate.buildingId,
+        name: buildingTemplate.name,
+        gold_coins: buildingTemplate.gold_coins || 0,
+        position: buildingPosition,
+        size: buildingTemplate.size || { x: 2, y: 2 },
+        index: newBuildingIndex,
+        reserveCoins: 0,
+        last_collected: new Date(),
+        creatures: []
+      };
+      
+      // Initialize buildings array if it doesn't exist
+      if (!user.buildings) {
+        user.buildings = [];
+      }
+      
+      // Add the building to the user
+      user.buildings.push(newBuilding);
+      
+      // Update the creature to reference the new building
+      user.creatures[creatureIndex].building_index = newBuildingIndex;
+      
+      // Add creature to building's creatures array
+      if (!newBuilding.creatures) {
+        newBuilding.creatures = [];
+      }
+      newBuilding.creatures.push(user.creatures[creatureIndex]._id);
+      
+      // Mark as modified
+      user.markModified('buildings');
+      user.markModified('creatures');
+      
+      // Save user
+      await user.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: `New building created and creature assigned successfully`,
+        data: {
+          building: newBuilding,
+          creature: user.creatures[creatureIndex]
+        }
+      });
+    } else {
+      // Neither buildingId nor buildingIndex provided
+      return res.status(400).json({
+        success: false,
+        message: 'Either buildingId or buildingIndex must be provided'
+      });
+    }
+  } catch (error) {
+    console.error('Error in assign creature to building route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Server error: ${error.message}`
+    });
+  }
+});
+
+// Keep old route for backward compatibility
+app.post('/api/creature/assign-to-building', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    // Forward the request to the new endpoint
+    res.redirect(307, `/api/user/${userId}/creature/assign-to-building`);
+  } catch (error) {
+    console.error('Error in creature assign-to-building route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error assigning creature to building: ${error.message}`
+    });
+  }
+});
+
+// Direct route for unlocking a creature
+app.post('/api/user/:userId/creature/unlock', async (req, res) => {
+  try {
+    console.log('Direct creature unlock route hit', req.params, req.body);
+    const { userId } = req.params;
+    const { creatureId } = req.body;
+    
+    if (!userId || !creatureId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, creatureId'
+      });
+    }
+    
+    // Import the userService
+    const userService = require('./service/userService');
+    
+    // Call the unlock function
+    const result = await userService.unlockCreature(userId, creatureId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in unlock creature route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Server error: ${error.message}`
+    });
+  }
+});
+
+// Keep old route for backward compatibility
+app.post('/api/creature/unlock', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    // Forward the request to the new endpoint
+    res.redirect(307, `/api/user/${userId}/creature/unlock`);
+  } catch (error) {
+    console.error('Error in creature unlock route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error unlocking creature: ${error.message}`
+    });
+  }
+});
+
+// Direct route for starting the unlock timer for a creature
+app.post('/api/user/:userId/creature/start-unlock', async (req, res) => {
+  try {
+    console.log('Direct creature start-unlock route hit', req.params, req.body);
+    const { userId } = req.params;
+    const { creatureId } = req.body;
+    
+    if (!userId || !creatureId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, creatureId'
+      });
+    }
+    
+    // Import the userService
+    const userService = require('./service/userService');
+    
+    // Call the start unlock function
+    const result = await userService.startCreatureUnlock(userId, creatureId);
+    
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in start creature unlock route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Server error: ${error.message}`
+    });
+  }
+});
+
+// Keep old route for backward compatibility
+app.post('/api/creature/start-unlock', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    // Forward the request to the new endpoint
+    res.redirect(307, `/api/user/${userId}/creature/start-unlock`);
+  } catch (error) {
+    console.error('Error in creature start-unlock route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error starting creature unlock: ${error.message}`
+    });
+  }
+});
+
+// Direct route for checking creature unlock status - already has userId in URL
+app.get('/api/creature/unlock-status/:userId', async (req, res) => {
+  try {
+    console.log('Direct creature unlock-status route hit', req.params);
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: userId'
+      });
+    }
+    
+    // Import the userService
+    const userService = require('./service/userService');
+    
+    // Call the check unlock status function
+    const result = await userService.checkCreatureUnlockStatus(userId);
+    
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in check creature unlock status route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Server error: ${error.message}`
+    });
+  }
+});
+
+// Add another route with consistent pattern
+app.get('/api/user/:userId/creature/unlock-status', async (req, res) => {
+  try {
+    console.log('User creature unlock-status route hit', req.params);
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: userId'
+      });
+    }
+    
+    // Import the userService
+    const userService = require('./service/userService');
+    
+    // Call the check unlock status function
+    const result = await userService.checkCreatureUnlockStatus(userId);
+    
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in check creature unlock status route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Server error: ${error.message}`
+    });
+  }
+});
+
+// Get a user with buildings and creatures
+app.get('/api/users/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).populate({
+            path: 'buildings',
+            populate: { path: 'creature_id' }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Basic route
+app.get('/', (req, res) => {
+    res.json({ message: 'Welcome to the Game Backend API' });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ message: 'Something went wrong!' });
+});
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`);
+}); 

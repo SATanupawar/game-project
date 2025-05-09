@@ -1,0 +1,5 @@
+node_modules/
+.env
+node-key.pem
+node-cert.pem
+config/my-game-b2f9d-firebase-adminsdk-fbsvc-2c76088d90.json
