@@ -1,11 +1,70 @@
 const admin = require('firebase-admin');
 const User = require('../models/user');
 
+// Debug environment variables
+console.log('Firebase Configuration:');
+console.log('firebase_type:', process.env.firebase_type);
+console.log('firebase_project_id:', process.env.firebase_project_id);
+console.log('firebase_private_key_id:', process.env.firebase_private_key_id);
+console.log('firebase_client_email:', process.env.firebase_client_email);
+
+// Check if required environment variables are present
+const requiredEnvVars = [
+    'firebase_type',
+    'firebase_project_id',
+    'firebase_private_key_id',
+    'firebase_private_key',
+    'firebase_client_email',
+    'firebase_client_id',
+    'firebase_auth_uri',
+    'firebase_auth_provider_x509_cert_url',
+    'firebase_client_x509_cert_url'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingEnvVars.length > 0) {
+    console.error('Missing required environment variables:', missingEnvVars);
+    throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+}
+
 // Initialize Firebase Admin
-const serviceAccount = require('../config/my-game-b2f9d-firebase-adminsdk-fbsvc-2c76088d90.json');
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+const serviceAccount = {
+    type: process.env.firebase_type,
+    project_id: process.env.firebase_project_id,
+    private_key_id: process.env.firebase_private_key_id,
+    private_key: process.env.firebase_private_key?.replace(/\\n/g, '\n').replace(/"/g, ''),
+    client_email: process.env.firebase_client_email,
+    client_id: process.env.firebase_client_id,
+    auth_uri: process.env.firebase_auth_uri,
+    token_uri: process.env.firebase_token_uri,
+    auth_provider_x509_cert_url: process.env.firebase_auth_provider_cert_url,
+    client_x509_cert_url: process.env.firebase_client_cert_url
+};
+
+// Initialize Firebase Admin with proper error handling
+try {
+    // Log the private key format for debugging (first 50 chars only)
+    console.log('Private key format check:', serviceAccount.private_key?.substring(0, 50));
+    
+    // Verify private key format
+    if (!serviceAccount.private_key?.includes('-----BEGIN PRIVATE KEY-----')) {
+        throw new Error('Private key is missing BEGIN marker');
+    }
+    if (!serviceAccount.private_key?.includes('-----END PRIVATE KEY-----')) {
+        throw new Error('Private key is missing END marker');
+    }
+    
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('Firebase Admin initialized successfully');
+} catch (error) {
+    console.error('Error initializing Firebase Admin:', error);
+    console.error('Private key length:', serviceAccount.private_key?.length);
+    console.error('Private key contains newlines:', serviceAccount.private_key?.includes('\n'));
+    throw error;
+}
 
 // Send push notification to all users
 async function sendPushNotificationToAllUsers(title, body, data = {}) {

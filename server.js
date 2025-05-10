@@ -1,10 +1,30 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+const fs = require('fs');
 
-// console.log('Environment variables:');
-// console.log('MONGODB_URI:', process.env.MONGODB_URI);
-// console.log('PORT:', process.env.PORT);
-// console.log('NODE_ENV:', process.env.NODE_ENV);
+const envPath = path.resolve(__dirname, '.env');
+console.log('Loading .env file from:', envPath);
+
+// Check if .env file exists
+if (fs.existsSync(envPath)) {
+    console.log('.env file exists');
+    // Read and log the first few characters of the file (without sensitive data)
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    console.log('First 100 characters of .env file:', envContent.substring(0, 100));
+} else {
+    console.log('.env file does not exist');
+}
+
+require('dotenv').config({ path: envPath });
+
+// Debug environment variables
+console.log('\nEnvironment variables loaded:');
+console.log('firebase_type:', process.env.firebase_type);
+console.log('firebase_project_id:', process.env.firebase_project_id);
+console.log('firebase_private_key_id:', process.env.firebase_private_key_id);
+console.log('firebase_client_email:', process.env.firebase_client_email);
+console.log('mongodb_uri:', process.env.mongodb_uri);
+console.log('port:', process.env.port);
+console.log('node_env:', process.env.node_env);
 
 const express = require('express');
 const cors = require('cors');
