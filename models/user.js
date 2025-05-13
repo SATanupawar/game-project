@@ -367,10 +367,42 @@ const userSchema = new mongoose.Schema({
             default: 0
         }
     },
+    // Authentication related fields
+    login_time: {
+        type: Date,
+        default: null
+    },
     logout_time: {
         type: Date,
-        default: Date.now
+        default: null
     },
+    deviceInfo: {
+        type: Object,
+        default: null
+    },
+    lastActiveIP: {
+        type: String,
+        default: null
+    },
+    // Session history to store all session durations
+    sessionHistory: [{
+        startTime: {
+            type: Date,
+            required: true
+        },
+        endTime: {
+            type: Date,
+            required: true
+        },
+        duration: {
+            type: Number, // Duration in minutes (with 1 decimal precision)
+            required: true
+        },
+        deviceInfo: {
+            type: Object,
+            default: null
+        }
+    }],
     // Add locked_creatures array for creatures obtained from card packs
     locked_creatures: [{
         creature_id: {

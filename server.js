@@ -37,6 +37,7 @@ const buildingDecorationRoutes = require('./routes/buildingDecorationRoute');
 const chestRoutes = require('./routes/chest');
 const arcaneEnergyRoutes = require('./routes/arcaneEnergyRoute');
 const pushNotificationRoutes = require('./routes/pushNotificationRoute');
+const authRoutes = require('./routes/authRoute');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
@@ -57,6 +58,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Public routes
 app.use('/api/users', userRoutes); // Registration and user creation should remain public
+app.use('/api/auth', authRoutes); // New auth routes - public access
 
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
