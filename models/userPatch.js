@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+ const mongoose = require('mongoose');
 const User = require('./user');
 
 // Patch the User model to override the locked_creatures field

@@ -38,9 +38,14 @@ const chestRoutes = require('./routes/chest');
 const arcaneEnergyRoutes = require('./routes/arcaneEnergyRoute');
 const pushNotificationRoutes = require('./routes/pushNotificationRoute');
 const authRoutes = require('./routes/authRoute');
+const logRoutes = require('./routes/logRoute');
+const matchmakingRoutes = require('./routes/matchmakingRoute');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
+
+// Import logging middleware
+const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
 
 const app = express();
 
@@ -56,9 +61,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Add request logging middleware
+app.use(requestLogger);
+
 // Public routes
 app.use('/api/users', userRoutes); // Registration and user creation should remain public
 app.use('/api/auth', authRoutes); // New auth routes - public access
+app.use('/api/logs', logRoutes); // Logging routes - normally these would be admin-only
+app.use('/api/matchmaking', matchmakingRoutes); // Add matchmaking routes
 
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
@@ -581,6 +591,9 @@ app.get('/', (req, res) => {
 });
 
 // Error handling middleware
+app.use(errorLogger); // Add error logging middleware
+
+// Final error handler
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ message: 'Something went wrong!' });

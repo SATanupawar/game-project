@@ -1,4 +1,5 @@
 const User = require('../models/user');
+const logService = require('./logService');
 
 /**
  * Log in a user, creating a new user if they don't exist
@@ -29,6 +30,13 @@ async function login(userId, userName, additionalData = {}) {
                 // Set initial login time
                 login_time: new Date()
             });
+            
+            // Log user registration
+            await logService.logAuthEvent('USER_REGISTERED', userId, {
+                userName: user.user_name,
+                initialGoldCoins: user.gold_coins,
+                deviceInfo: additionalData.deviceInfo || null
+            });
         } else {
             // Update existing user's login time
             user.login_time = new Date();
@@ -49,6 +57,16 @@ async function login(userId, userName, additionalData = {}) {
         // Save the user
         await user.save();
         
+        // Log the login event
+        await logService.logAuthEvent('USER_LOGIN', userId, {
+            userName: user.user_name,
+            isNewUser,
+            level: user.level,
+            xp: user.xp,
+            goldCoins: user.gold_coins,
+            deviceInfo: additionalData.deviceInfo || null
+        });
+        
         return {
             success: true,
             message: isNewUser ? 'New user created and logged in' : 'User logged in successfully',
@@ -64,6 +82,8 @@ async function login(userId, userName, additionalData = {}) {
         };
     } catch (error) {
         console.error('Error in login service:', error);
+        // Log the error
+        await logService.logSystemError('Login failed', error, 'authService.login');
         throw error;
     }
 }
@@ -118,6 +138,14 @@ async function logout(userId) {
         
         // Save user
         await user.save();
+        
+        // Log the logout event
+        await logService.logAuthEvent('USER_LOGOUT', userId, {
+            userName: user.user_name,
+            sessionDurationMinutes,
+            login_time: user.login_time,
+            logout_time: user.logout_time
+        });
 
         return {
             success: true,
@@ -128,6 +156,8 @@ async function logout(userId) {
         };
     } catch (error) {
         console.error('Error in logout service:', error);
+        // Log the error
+        await logService.logSystemError('Logout failed', error, 'authService.logout');
         throw error;
     }
 }
