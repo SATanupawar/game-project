@@ -3,13 +3,14 @@ const router = express.Router();
 const authService = require('../service/authService');
 
 /**
- * @route POST /api/auth/login
+ * @route POST /api/auth/login/:userId
  * @desc Log in a user or create a new account
  * @access Public
  */
-router.post('/login', async (req, res) => {
+router.post('/login/:userId', async (req, res) => {
     try {
-        const { userId, userName, deviceInfo } = req.body;
+        const { userId } = req.params;
+        const { userName, deviceInfo, fcmToken } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -20,7 +21,7 @@ router.post('/login', async (req, res) => {
 
         const result = await authService.login(userId, userName, {
             deviceInfo,
-            fcmToken: req.body.fcmToken // Optional: Update FCM token on login
+            fcmToken
         });
 
         res.status(200).json(result);
@@ -35,13 +36,13 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * @route POST /api/auth/logout
+ * @route POST /api/auth/logout/:userId
  * @desc Log out a user and update their logout time
  * @access Public
  */
-router.post('/logout', async (req, res) => {
+router.post('/logout/:userId', async (req, res) => {
     try {
-        const { userId } = req.body;
+        const { userId } = req.params;
 
         if (!userId) {
             return res.status(400).json({

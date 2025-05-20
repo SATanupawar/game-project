@@ -23,10 +23,12 @@ async function login(userId, userName, additionalData = {}) {
             user = new User({
                 userId,
                 user_name: userName || 'Player',
+                fcmToken: additionalData.fcmToken || null,
                 gold_coins: 500, // Default starting gold
                 buildings: [],
                 creatures: [],
                 creating_creatures: [],
+                deviceInfo: additionalData.deviceInfo || null,
                 // Set initial login time
                 login_time: new Date()
             });
@@ -35,7 +37,8 @@ async function login(userId, userName, additionalData = {}) {
             await logService.logAuthEvent('USER_REGISTERED', userId, {
                 userName: user.user_name,
                 initialGoldCoins: user.gold_coins,
-                deviceInfo: additionalData.deviceInfo || null
+                deviceInfo: additionalData.deviceInfo || null,
+                fcmToken: additionalData.fcmToken ? true : false
             });
         } else {
             // Update existing user's login time
@@ -46,10 +49,22 @@ async function login(userId, userName, additionalData = {}) {
                 user.user_name = userName;
             }
             
-            // Update any additional fields
+            // Update FCM token if provided
+            if (additionalData.fcmToken) {
+                user.fcmToken = additionalData.fcmToken;
+            }
+            
+            // Update device info if provided
+            if (additionalData.deviceInfo) {
+                user.deviceInfo = additionalData.deviceInfo;
+            }
+            
+            // Update any other additional fields
             if (additionalData && typeof additionalData === 'object') {
                 Object.keys(additionalData).forEach(key => {
-                    user[key] = additionalData[key];
+                    if (key !== 'fcmToken' && key !== 'deviceInfo') {
+                        user[key] = additionalData[key];
+                    }
                 });
             }
         }
@@ -64,7 +79,8 @@ async function login(userId, userName, additionalData = {}) {
             level: user.level,
             xp: user.xp,
             goldCoins: user.gold_coins,
-            deviceInfo: additionalData.deviceInfo || null
+            deviceInfo: additionalData.deviceInfo || null,
+            fcmToken: user.fcmToken ? true : false
         });
         
         return {
@@ -77,7 +93,8 @@ async function login(userId, userName, additionalData = {}) {
                 level: user.level,
                 xp: user.xp,
                 goldCoins: user.gold_coins,
-                login_time: user.login_time
+                login_time: user.login_time,
+                fcmToken: user.fcmToken ? true : null // Just indicate if token exists, don't return the actual token
             }
         };
     } catch (error) {
