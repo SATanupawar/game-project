@@ -40,9 +40,12 @@ const pushNotificationRoutes = require('./routes/pushNotificationRoute');
 const authRoutes = require('./routes/authRoute');
 const logRoutes = require('./routes/logRoute');
 const matchmakingRoutes = require('./routes/matchmakingRoute');
+const questRoutes = require('./routes/questRoute');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
+const Building = require('./models/building');
+const userService = require('./service/userService');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -69,6 +72,7 @@ app.use('/api/users', userRoutes); // Registration and user creation should rema
 app.use('/api/auth', authRoutes); // New auth routes - public access
 app.use('/api/logs', logRoutes); // Logging routes - normally these would be admin-only
 app.use('/api/matchmaking', matchmakingRoutes); // Add matchmaking routes
+app.use('/api/quests', questRoutes); // Quest routes
 
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
@@ -228,9 +232,6 @@ app.post('/api/user/:userId/creature/assign-to-building', async (req, res) => {
     }
 
     // Find user
-    const User = require('./models/user');
-    const Building = require('./models/building');
-    
     const user = await User.findOne({ userId });
     if (!user) {
       return res.status(404).json({
@@ -306,6 +307,14 @@ app.post('/api/user/:userId/creature/assign-to-building', async (req, res) => {
       // Save user
       await user.save();
       
+      // Ensure relationship consistency
+      try {
+        await userService.fixBuildingCreatureRelationships(userId);
+      } catch (relError) {
+        console.error('Error ensuring relationship consistency:', relError);
+        // Continue anyway since the basic operation succeeded
+      }
+      
       return res.status(200).json({
         success: true,
         message: `Creature assigned to existing building with index ${buildingIdx}`,
@@ -372,6 +381,14 @@ app.post('/api/user/:userId/creature/assign-to-building', async (req, res) => {
       // Save user
       await user.save();
       
+      // Ensure relationship consistency
+      try {
+        await userService.fixBuildingCreatureRelationships(userId);
+      } catch (relError) {
+        console.error('Error ensuring relationship consistency:', relError);
+        // Continue anyway since the basic operation succeeded
+      }
+      
       return res.status(200).json({
         success: true,
         message: `New building created and creature assigned successfully`,
@@ -413,44 +430,45 @@ app.post('/api/creature/assign-to-building', async (req, res) => {
 
 // Direct route for unlocking a creature
 app.post('/api/user/:userId/creature/unlock', async (req, res) => {
-  try {
-    console.log('Direct creature unlock route hit', req.params, req.body);
-    const { userId } = req.params;
-    const { creatureId } = req.body;
-    
-    if (!userId || !creatureId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields: userId, creatureId'
-      });
+    try {    
+        console.log('Direct creature unlock route hit', req.params, req.body);    
+        const { userId } = req.params;    
+        const { creatureId, forceUnlock } = req.body;
+        
+        if (!userId || !creatureId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Missing required fields: userId, creatureId'
+          });
+        }
+        
+        // Import the userService
+        const userService = require('./service/userService');
+        
+        // Pass forceUnlock parameter
+        const result = await userService.unlockCreature(userId, creatureId, forceUnlock);
+        
+        if (!result.success) {
+          return res.status(400).json(result);
+        }
+        
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error('Error in unlock creature route:', error);
+        return res.status(500).json({
+          success: false,
+          message: `Server error: ${error.message}`
+        });
     }
-    
-    // Import the userService
-    const userService = require('./service/userService');
-    
-    // Call the unlock function
-    const result = await userService.unlockCreature(userId, creatureId);
-    
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-    
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error('Error in unlock creature route:', error);
-    return res.status(500).json({
-      success: false,
-      message: `Server error: ${error.message}`
-    });
-  }
 });
 
 // Keep old route for backward compatibility
 app.post('/api/creature/unlock', async (req, res) => {
   try {
-    const { userId } = req.body;
-    // Forward the request to the new endpoint
-    res.redirect(307, `/api/user/${userId}/creature/unlock`);
+    const { userId, creatureId, forceUnlock } = req.body;
+    // Forward all parameters including forceUnlock
+    const result = await userService.unlockCreature(userId, creatureId, forceUnlock);
+    return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('Error in creature unlock route:', error);
     return res.status(500).json({

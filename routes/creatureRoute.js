@@ -144,6 +144,25 @@ router.post('/', async (req, res) => {
         }
         
         const creature = await createCreature(req.body);
+        
+        // Track quest progress if userId is provided
+        if (req.body.userId) {
+            try {
+                // Import quest service
+                const questService = require('../service/questService');
+                
+                // Track creature creation for quests
+                await questService.trackQuestProgress(req.body.userId, 'create_creature', { 
+                    creature_id: creature.creature_Id,
+                    creature_type: creature.type,
+                    creature_rarity: creature.rarity
+                });
+            } catch (questError) {
+                console.error('Error updating quest progress for creature creation:', questError);
+                // Continue with response even if quest update fails
+            }
+        }
+        
         res.status(201).json({
             success: true,
             message: 'Creature created successfully',
@@ -1298,6 +1317,129 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         });
     } catch (error) {
         console.error('Error in upgrade-milestone:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route POST /:userId/creatures/:creatureId/feed
+ * @desc Feed a creature to increase its stats
+ * @access Public
+ */
+router.post('/:userId/creatures/:creatureId/feed', async (req, res) => {
+    try {
+        const { userId, creatureId } = req.params;
+        const { foodAmount = 1, foodType = 'regular' } = req.body;
+        
+        // Validate inputs
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+        
+        if (!creatureId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Creature ID is required'
+            });
+        }
+        
+        // Find the user
+        const User = require('../models/user');
+        const user = await User.findOne({ userId });
+        
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Find the creature
+        const creatureIndex = user.creatures.findIndex(c => 
+            c._id.toString() === creatureId || c.creature_id?.toString() === creatureId
+        );
+        
+        if (creatureIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Creature not found'
+            });
+        }
+        
+        const creature = user.creatures[creatureIndex];
+        
+        // Calculate stats increase based on food type and amount
+        const statsIncreasePercentage = foodType === 'premium' ? 0.05 : 0.02;
+        const healthIncrease = Math.round(creature.health * statsIncreasePercentage * foodAmount);
+        const attackIncrease = Math.round(creature.attack * statsIncreasePercentage * foodAmount);
+        
+        // Update creature stats
+        user.creatures[creatureIndex].health += healthIncrease;
+        user.creatures[creatureIndex].attack += attackIncrease;
+        
+        // Track feeding in creature's history if it doesn't exist yet
+        if (!user.creatures[creatureIndex].feeding_history) {
+            user.creatures[creatureIndex].feeding_history = [];
+        }
+        
+        // Add feeding record
+        user.creatures[creatureIndex].feeding_history.push({
+            date: new Date(),
+            food_type: foodType,
+            food_amount: foodAmount,
+            health_increase: healthIncrease,
+            attack_increase: attackIncrease
+        });
+        
+        // Mark as modified since we're updating nested arrays
+        user.markModified('creatures');
+        
+        // Save user
+        await user.save();
+        
+        // Track quest progress
+        try {
+            // Import quest service
+            const questService = require('../service/questService');
+            
+            // Track creature feeding for quest progress
+            await questService.trackQuestProgress(userId, 'feed_creature', {
+                creature_id: creatureId,
+                food_type: foodType,
+                food_amount: foodAmount
+            });
+        } catch (questError) {
+            console.error('Error tracking quest progress for feeding creature:', questError);
+            // Continue with response even if quest tracking fails
+        }
+        
+        res.status(200).json({
+            success: true,
+            message: `Creature fed successfully with ${foodAmount} ${foodType} food`,
+            data: {
+                creature_id: creatureId,
+                previous_stats: {
+                    health: creature.health,
+                    attack: creature.attack
+                },
+                new_stats: {
+                    health: user.creatures[creatureIndex].health,
+                    attack: user.creatures[creatureIndex].attack
+                },
+                increases: {
+                    health: healthIncrease,
+                    attack: attackIncrease
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error feeding creature:', error);
         res.status(500).json({
             success: false,
             message: error.message

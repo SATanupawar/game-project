@@ -9,7 +9,7 @@ const gameLiftService = require('../service/gameLiftService');
  */
 router.post('/ticket', async (req, res) => {
     try {
-        const { userId, playerAttributes, playerIds } = req.body;
+        const { userId, trophyCount, region, playerAttributes, playerIds } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -18,18 +18,26 @@ router.post('/ticket', async (req, res) => {
             });
         }
 
-        // Validate player attributes
-        if (!playerAttributes || typeof playerAttributes !== 'object') {
+        // Create default playerAttributes if not provided
+        let finalPlayerAttributes = playerAttributes;
+        
+        // If playerAttributes not provided but trophyCount is, create attributes automatically
+        if ((!playerAttributes || typeof playerAttributes !== 'object') && trophyCount) {
+            finalPlayerAttributes = {
+                skill: trophyCount,
+                region: region || 'default'
+            };
+        } else if (!playerAttributes || typeof playerAttributes !== 'object') {
             return res.status(400).json({
                 success: false,
-                message: 'Player attributes are required'
+                message: 'Player attributes are required or provide trophyCount'
             });
         }
 
         // Create matchmaking ticket
         const result = await gameLiftService.createMatchmakingTicket(
             userId, 
-            playerAttributes, 
+            finalPlayerAttributes, 
             playerIds || []
         );
 
@@ -239,6 +247,90 @@ router.get('/match/:matchId', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error getting match details',
+            error: error.message
+        });
+    }
+});
+
+/**
+ * @route POST /api/matchmaking/battle/results
+ * @desc Submit battle results for quest tracking
+ * @access Public
+ */
+router.post('/battle/results', async (req, res) => {
+    try {
+        const { 
+            userId, 
+            matchId, 
+            isWinner, 
+            participatedInBattle = true,
+            knockoutCount = 0 
+        } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        if (!matchId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Match ID is required'
+            });
+        }
+
+        // Import quest service
+        const questService = require('../service/questService');
+        const results = { tracked: [] };
+
+        // Track battle participation
+        if (participatedInBattle) {
+            const participateResult = await questService.trackQuestProgress(userId, 'participate_battle', {
+                match_id: matchId
+            });
+            results.tracked.push({
+                action: 'participate_battle',
+                result: participateResult
+            });
+        }
+
+        // Track battle win if applicable
+        if (isWinner) {
+            const winResult = await questService.trackQuestProgress(userId, 'win_battle', {
+                match_id: matchId
+            });
+            results.tracked.push({
+                action: 'win_battle',
+                result: winResult
+            });
+        }
+
+        // Track knockouts if any
+        if (knockoutCount > 0) {
+            const knockoutResult = await questService.trackQuestProgress(userId, 'get_knockout', {
+                match_id: matchId,
+                amount: knockoutCount
+            });
+            results.tracked.push({
+                action: 'get_knockout',
+                result: knockoutResult
+            });
+        }
+
+        console.log('Battle results tracked for quests:', JSON.stringify(results, null, 2));
+
+        res.status(200).json({
+            success: true,
+            message: 'Battle results tracked for quests',
+            data: results
+        });
+    } catch (error) {
+        console.error('Error tracking battle results:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error tracking battle results',
             error: error.message
         });
     }

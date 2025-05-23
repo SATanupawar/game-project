@@ -1,12 +1,19 @@
 const mongoose = require('mongoose');
 
+// Try to unregister the model if it exists
+try {
+    mongoose.deleteModel('UserLevel');
+} catch (e) {
+    // Model doesn't exist yet, which is fine
+}
+
 const userLevelSchema = new mongoose.Schema({
     level: {
         type: Number,
         required: true,
         unique: true,
         min: 1,
-        max: 40
+        max: 100 // Explicit max of 100
     },
     required_xp: {
         type: Number,
@@ -67,6 +74,7 @@ userLevelSchema.statics.getXPProgress = async function(currentXP) {
     };
 };
 
-const UserLevel = mongoose.model('UserLevel', userLevelSchema);
+// Create the model with an explicit collection name
+const UserLevel = mongoose.model('UserLevel', userLevelSchema, 'userlevels');
 
 module.exports = UserLevel; 

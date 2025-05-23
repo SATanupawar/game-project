@@ -522,6 +522,22 @@ async function collectReserveCoins(userId, buildingIndex, boost = 0) {
             // Save user
             await user.save();
             
+            // Update quest progress
+            try {
+                // Import quest service
+                const questService = require('./questService');
+                
+                // Track gold collection for quests
+                await questService.trackQuestProgress(userId, 'collect_gold', { 
+                    amount: totalToCollect,
+                    source: 'building',
+                    building_id: building.buildingId
+                });
+            } catch (questError) {
+                console.error('Error updating quest progress for gold collection:', questError);
+                // Continue with response even if quest update fails
+            }
+            
             console.log(`Collected ${totalToCollect.toFixed(2)} coins (${goldGenerated.toFixed(2)} time-based + ${reserveCoins.toFixed(2)} reserve)`);
             console.log(`User now has ${user.gold_coins.toFixed(2)} coins`);
             
@@ -1004,6 +1020,15 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             });
             console.log('Added creature to user with building index:', randomIndex);
 
+            // Initialize building.creatures array if it doesn't exist
+            if (!newBuilding.creatures) {
+                newBuilding.creatures = [];
+            }
+            
+            // Add creature to building's creatures array
+            newBuilding.creatures.push(newCreature._id);
+            console.log('Added creature to building\'s creatures array:', newCreature._id);
+
             // Add creature to response
             const matchedDetails = await Creature.findOne({ 
                 name: newCreature.name,
@@ -1027,6 +1052,36 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
         // Save changes
         await user.save();
         console.log('Saved all changes to user');
+        
+        // Track quest progress for building placement
+        try {
+            // Import quest service
+            const questService = require('./questService');
+            
+            // Update quest progress for building placement
+            await questService.trackQuestProgress(userIdParam, 'place_building', {
+                building_id: buildingTemplate.buildingId,
+                building_type: buildingTemplate.type
+            });
+            
+            // If building is directly added (not under construction)
+            if (constructionTime <= 0) {
+                // Update total buildings count quest
+                await questService.trackQuestProgress(userIdParam, 'total_buildings', {
+                    amount: user.buildings.length
+                });
+                
+                // If this building has a specific type, update type-specific quests
+                if (buildingTemplate.type) {
+                    await questService.trackQuestProgress(userIdParam, `place_${buildingTemplate.type}_building`, {
+                        amount: 1
+                    });
+                }
+            }
+        } catch (questError) {
+            console.error('Error updating quest progress for building placement:', questError);
+            // Continue with response even if quest update fails
+        }
         
         return response;
     } catch (error) {
@@ -3316,6 +3371,7 @@ async function checkBuildingConstructionStatus(userIdParam) {
                     name: building.name,
                     cost: building.cost,
                     gold_coins: building.gold_coins,
+                    generation_interval: building.generation_interval,
                     position: building.position,
                     size: building.size,
                     index: building.index,
@@ -4180,7 +4236,75 @@ async function startCreatureUnlock(userId, creatureId) {
     }
 }
 
-// Export the functions
+// Fix any inconsistencies between creature building_index and building.creatures arrays
+async function fixBuildingCreatureRelationships(userIdParam) {
+    try {
+        console.log(`Fixing building-creature relationships for user ${userIdParam}`);
+        
+        // Find user
+        let user = await User.findOne({ userId: userIdParam });
+        if (!user && mongoose.Types.ObjectId.isValid(userIdParam)) {
+            user = await User.findById(userIdParam);
+        }
+        if (!user) {
+            return { success: false, message: "User not found" };
+        }
+        
+        // Skip if no creatures or buildings
+        if (!user.creatures || !user.buildings) {
+            return { success: true, message: "No creatures or buildings to fix" };
+        }
+        
+        let fixCount = 0;
+        
+        // Loop through all creatures
+        for (const creature of user.creatures) {
+            // Skip creatures without a building_index
+            if (!creature.building_index) continue;
+            
+            // Find the building this creature is assigned to
+            const building = user.buildings.find(b => b.index === creature.building_index);
+            if (!building) continue;
+            
+            // Initialize building.creatures array if it doesn't exist
+            if (!building.creatures) {
+                building.creatures = [];
+            }
+            
+            // Get creature ID (either _id or creature_id)
+            const creatureId = creature._id || creature.creature_id;
+            if (!creatureId) continue;
+            
+            // Check if creature is not in building's creatures array
+            const creatureIdStr = creatureId.toString();
+            const alreadyInBuilding = building.creatures.some(cid => 
+                cid.toString() === creatureIdStr
+            );
+            
+            if (!alreadyInBuilding) {
+                // Add creature to building's creatures array
+                building.creatures.push(creatureId);
+                fixCount++;
+            }
+        }
+        
+        if (fixCount > 0) {
+            // Save changes if any fixes were made
+            user.markModified('buildings');
+            await user.save();
+        }
+        
+        return { 
+            success: true, 
+            message: `Fixed ${fixCount} creature-building relationships` 
+        };
+    } catch (error) {
+        console.error('Error in fixBuildingCreatureRelationships:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+// Export the function
 module.exports = {
     getUserWithDetails,
     updateUserGold,
@@ -4216,5 +4340,6 @@ module.exports = {
     checkCreatureUnlockStatus,
     unlockCreature,
     assignCreatureToBuilding,
-    startCreatureUnlock
+    startCreatureUnlock,
+    fixBuildingCreatureRelationships
 };

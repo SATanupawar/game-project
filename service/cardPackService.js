@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const CardPack = require('../models/cardPack');
 const User = require('../models/user');
+const Creature = require('../models/creature');
 
 /**
  * Opens a card pack for a user based on pack type
@@ -92,24 +93,52 @@ async function openCardPack(userId, packId) {
                         card_number: card.card_number
                     });
                 } else if (selectedReward.reward_type === 'creature') {
-                    // Add creature directly to user's creatures collection
+                    // Fetch complete creature data from the database
                     console.log(`Adding creature ${selectedReward.creature_name} to user's creatures array`);
                     
+                    // Find the creature in the database by name (case insensitive)
+                    const creatureTemplate = await Creature.findOne({
+                        name: { $regex: new RegExp('^' + selectedReward.creature_name + '$', 'i') }
+                    });
+                    
+                    if (!creatureTemplate) {
+                        console.log(`Warning: Creature template not found for ${selectedReward.creature_name}`);
+                    }
+                    
                     const creatureId = new mongoose.Types.ObjectId();
+                    
+                    // Create creature with complete data from template if found
                     const newCreature = {
                         _id: creatureId,
                         creature_id: creatureId,
                         name: selectedReward.creature_name,
-                        creature_type: selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_'),
+                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
+                                      (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
+                        type: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
                         level: 1,
                         building_index: 0, // Default building index
-                        base_attack: selectedReward.base_attack || 50,
-                        base_health: selectedReward.base_health || 300,
-                        attack: selectedReward.base_attack || 50,
-                        health: selectedReward.base_health || 300,
-                        gold_coins: 0,
+                        base_attack: creatureTemplate ? creatureTemplate.base_attack : (selectedReward.base_attack || 50),
+                        base_health: creatureTemplate ? creatureTemplate.base_health : (selectedReward.base_health || 300),
+                        attack: creatureTemplate ? creatureTemplate.base_attack : (selectedReward.base_attack || 50),
+                        health: creatureTemplate ? creatureTemplate.base_health : (selectedReward.base_health || 300),
+                        gold_coins: creatureTemplate ? creatureTemplate.gold_coins : 0,
+                        arcane_energy: creatureTemplate ? creatureTemplate.arcane_energy : 0,
+                        image: creatureTemplate ? creatureTemplate.image : null,
+                        description: creatureTemplate ? creatureTemplate.description : `A mysterious ${selectedReward.creature_name}`,
+                        unlock_level: creatureTemplate ? creatureTemplate.unlock_level : 1,
                         count: 1
                     };
+                    
+                    // If we have level stats from the template, add the level 1 stats
+                    if (creatureTemplate && creatureTemplate.level_stats && creatureTemplate.level_stats.length > 0) {
+                        const level1Stats = creatureTemplate.level_stats.find(stat => stat.level === 1);
+                        if (level1Stats) {
+                            newCreature.attack = level1Stats.attack;
+                            newCreature.health = level1Stats.health;
+                            newCreature.gold_coins = level1Stats.gold || creatureTemplate.gold_coins;
+                            newCreature.arcane_energy = level1Stats.arcane_energy || creatureTemplate.arcane_energy;
+                        }
+                    }
                     
                     // Add to creatures array
                     if (!user.creatures) {
@@ -127,7 +156,8 @@ async function openCardPack(userId, packId) {
                         creature_name: selectedReward.creature_name,
                         creature_id: creatureId.toString(),
                         rarity: selectedReward.rarity,
-                        card_number: card.card_number
+                        card_number: card.card_number,
+                        complete_data: !!creatureTemplate // Flag indicating if we got complete data
                     });
                 }
             }
@@ -174,18 +204,30 @@ async function openCardPack(userId, packId) {
             // Migrate any existing locked creatures to the main creatures array
             for (const lockedCreature of user.locked_creatures) {
                 const migratedCreatureId = new mongoose.Types.ObjectId();
+                
+                // Try to find the creature template for this locked creature
+                const creatureTemplate = await Creature.findOne({
+                    name: { $regex: new RegExp('^' + lockedCreature.name + '$', 'i') }
+                });
+                
                 const migratedCreature = {
                     _id: migratedCreatureId,
                     creature_id: migratedCreatureId,
                     name: lockedCreature.name,
-                    creature_type: lockedCreature.creature_type || lockedCreature.name.toLowerCase().replace(/\s+/g, '_'),
+                    creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
+                                 (lockedCreature.creature_type || lockedCreature.name.toLowerCase().replace(/\s+/g, '_')),
+                    type: creatureTemplate ? creatureTemplate.type : 'common',
                     level: lockedCreature.level || 1,
                     building_index: 0, // Default building index
-                    base_attack: 50,
-                    base_health: 300,
-                    attack: 50,
-                    health: 300,
-                    gold_coins: 0,
+                    base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
+                    base_health: creatureTemplate ? creatureTemplate.base_health : 300,
+                    attack: creatureTemplate ? creatureTemplate.base_attack : 50,
+                    health: creatureTemplate ? creatureTemplate.base_health : 300,
+                    gold_coins: creatureTemplate ? creatureTemplate.gold_coins : 0,
+                    arcane_energy: creatureTemplate ? creatureTemplate.arcane_energy : 0,
+                    image: creatureTemplate ? creatureTemplate.image : null,
+                    description: creatureTemplate ? creatureTemplate.description : `A mysterious ${lockedCreature.name}`,
+                    unlock_level: creatureTemplate ? creatureTemplate.unlock_level : 1,
                     count: 1
                 };
                 

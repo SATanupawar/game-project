@@ -39,9 +39,23 @@ router.get('/:buildingId', async (req, res) => {
 router.put('/:buildingId/position', async (req, res) => {
     try {
         const { buildingId } = req.params;
-        const { x, y } = req.body;
+        const { x, y, userId } = req.body;
 
         const updatedBuilding = await buildingService.updateBuildingPosition(buildingId, x, y);
+        
+        // Update quest progress if userId is provided
+        if (userId) {
+            try {
+                // Import quest service
+                const questService = require('../service/questService');
+                
+                // Update quest progress for building placement/movement
+                await questService.updateQuestProgress(userId, 'move_building', 1);
+            } catch (questError) {
+                console.error('Error updating quest progress:', questError);
+                // Continue with response even if quest update fails
+            }
+        }
         
         res.json({
             success: true,

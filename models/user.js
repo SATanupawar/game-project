@@ -132,6 +132,34 @@ const arcaneEnergyBuildingSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+// Define schema for user quest tracking
+const userQuestSchema = new mongoose.Schema({
+    quest_id: {
+        type: String,
+        required: true
+    },
+    progress: {
+        type: Number,
+        default: 0
+    },
+    completed: {
+        type: Boolean,
+        default: false
+    },
+    rewarded: {
+        type: Boolean,
+        default: false
+    },
+    expires_at: {
+        type: Date,
+        required: true
+    },
+    completed_at: {
+        type: Date,
+        default: null
+    }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -420,7 +448,104 @@ const userSchema = new mongoose.Schema({
             type: Date,
             default: Date.now
         }
-    }]
+    }],
+    // Add to userSchema
+    active_quests: [userQuestSchema],
+    completed_quests: [{
+        quest_id: String,
+        completed_at: Date,
+        type: String // daily, weekly, monthly
+    }],
+    quest_stats: {
+        daily_completed: {
+            type: Number,
+            default: 0
+        },
+        weekly_completed: {
+            type: Number,
+            default: 0
+        },
+        monthly_completed: {
+            type: Number,
+            default: 0
+        },
+        total_completed: {
+            type: Number,
+            default: 0
+        },
+        last_daily_refresh: {
+            type: Date,
+            default: null
+        },
+        last_weekly_refresh: {
+            type: Date,
+            default: null
+        },
+        last_monthly_refresh: {
+            type: Date,
+            default: null
+        },
+        daily_replacements: {
+            type: Number,
+            default: 0
+        },
+        weekly_replacements: {
+            type: Number,
+            default: 0
+        },
+        monthly_replacements: {
+            type: Number,
+            default: 0
+        },
+        total_replacements: {
+            type: Number,
+            default: 0
+        }
+    },
+    replaced_quests: [{
+        old_quest_id: String,
+        old_quest_title: String,
+        new_quest_id: String,
+        new_quest_title: String,
+        quest_type: {
+            type: String,
+            enum: ['daily', 'weekly', 'monthly']
+        },
+        replaced_at: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    // Elite Pass information
+    elite_pass: {
+        active: {
+            type: Boolean,
+            default: false
+        },
+        purchase_date: {
+            type: Date,
+            default: null
+        },
+        expiry_date: {
+            type: Date,
+            default: null
+        }
+    },
+    // Elite quest statistics
+    elite_quest_stats: {
+        completed: {
+            type: Number,
+            default: 0
+        },
+        last_refresh: {
+            type: Date,
+            default: null
+        },
+        replacements: {
+            type: Number,
+            default: 0
+        }
+    },
 }, {
     timestamps: true,
     // Allow fields not specified in the schema

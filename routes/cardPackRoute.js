@@ -11,19 +11,19 @@ async function findUserByIdOrUsername(userIdentifier) {
         const userById = await User.findById(userIdentifier);
         if (userById) return userById;
     }
-    
+
     // Try finding by userId field
     let user = await User.findOne({ userId: userIdentifier });
     if (user) return user;
-    
+
     // Try finding by username field
     user = await User.findOne({ username: userIdentifier });
     if (user) return user;
-    
+
     // Try finding by user_name field
     user = await User.findOne({ user_name: userIdentifier });
     if (user) return user;
-    
+
     // No user found with any of the identifier fields
     return null;
 }
@@ -33,7 +33,7 @@ async function getOrCreateTestUser() {
     try {
         // Try to find an existing user
         let testUser = await User.findOne({});
-        
+
         // If no user exists, create one
         if (!testUser) {
             console.log('Creating test user...');
@@ -51,7 +51,7 @@ async function getOrCreateTestUser() {
             await testUser.save();
             console.log('Test user created with ID:', testUser._id);
         }
-        
+
         return testUser;
     } catch (error) {
         console.error('Error getting/creating test user:', error);
@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
         // Check if user ID is provided in the query parameters
         const userId = req.query.userId;
         let userToUse;
-        
+
         if (userId) {
             // Try to find the user with the provided ID or username
             userToUse = await findUserByIdOrUsername(userId);
@@ -83,13 +83,13 @@ router.get('/', async (req, res) => {
             // Use test user if no ID provided
             userToUse = await getOrCreateTestUser();
         }
-        
+
         const result = await cardPackService.getAvailableCardPacks(userToUse._id);
-        
+
         if (!result.success) {
             return res.status(400).json(result);
         }
-        
+
         return res.status(200).json({
             ...result,
             userId: userToUse._id,
@@ -97,10 +97,10 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting card packs:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server error', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 });
@@ -113,7 +113,7 @@ router.get('/', async (req, res) => {
 router.get('/users/:userId/card-packs', async (req, res) => {
     try {
         const { userId } = req.params;
-        
+
         // Try to find the user with the provided ID or username
         const user = await findUserByIdOrUsername(userId);
         if (!user) {
@@ -122,13 +122,13 @@ router.get('/users/:userId/card-packs', async (req, res) => {
                 message: `User with identifier "${userId}" not found`
             });
         }
-        
+
         const result = await cardPackService.getAvailableCardPacks(user._id);
-        
+
         if (!result.success) {
             return res.status(400).json(result);
         }
-        
+
         return res.status(200).json({
             ...result,
             userId: user._id,
@@ -136,10 +136,10 @@ router.get('/users/:userId/card-packs', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting card packs for user:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server error', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 });
@@ -152,20 +152,20 @@ router.get('/users/:userId/card-packs', async (req, res) => {
 router.get('/:packId', async (req, res) => {
     try {
         const { packId } = req.params;
-        
+
         const result = await cardPackService.getCardPackDetails(packId);
-        
+
         if (!result.success) {
             return res.status(404).json(result);
         }
-        
+
         return res.status(200).json(result);
     } catch (error) {
         console.error('Error getting card pack details:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server error', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 });
@@ -208,6 +208,22 @@ router.post('/open', async (req, res) => {
             return res.status(400).json(result);
         }
         
+        // Track quest progress for opening card pack
+        try {
+            // Import quest service
+            const questService = require('../service/questService');
+            
+            // Update quest progress for opening card pack
+            await questService.trackQuestProgress(userToUse.userId || userToUse._id.toString(), 'open_card_pack', {
+                pack_id: packId,
+                pack_type: result.data?.packType || 'unknown',
+                rewards: result.data?.rewards || []
+            });
+        } catch (questError) {
+            console.error('Error updating quest progress for card pack opening:', questError);
+            // Continue with response even if quest update fails
+        }
+        
         return res.status(200).json({
             ...result,
             userId: userToUse._id,
@@ -232,14 +248,14 @@ router.post('/users/:userId/card-packs/open', async (req, res) => {
     try {
         const { userId } = req.params;
         const { packId } = req.body;
-        
+
         if (!packId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Pack ID is required' 
+            return res.status(400).json({
+                success: false,
+                message: 'Pack ID is required'
             });
         }
-        
+
         // Try to find the user with the provided ID or username
         const user = await findUserByIdOrUsername(userId);
         if (!user) {
@@ -248,13 +264,29 @@ router.post('/users/:userId/card-packs/open', async (req, res) => {
                 message: `User with identifier "${userId}" not found`
             });
         }
-        
+
         const result = await cardPackService.openCardPack(user._id, packId);
-        
+
         if (!result.success) {
             return res.status(400).json(result);
         }
         
+        // Track quest progress for opening card pack
+        try {
+            // Import quest service
+            const questService = require('../service/questService');
+            
+            // Update quest progress for opening card pack
+            await questService.trackQuestProgress(userId, 'open_card_pack', {
+                pack_id: packId,
+                pack_type: result.data?.packType || 'unknown',
+                rewards: result.data?.rewards || []
+            });
+        } catch (questError) {
+            console.error('Error updating quest progress for card pack opening:', questError);
+            // Continue with response even if quest update fails
+        }
+
         return res.status(200).json({
             ...result,
             userId: user._id,
@@ -262,10 +294,10 @@ router.post('/users/:userId/card-packs/open', async (req, res) => {
         });
     } catch (error) {
         console.error('Error opening card pack for user:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server error', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 });

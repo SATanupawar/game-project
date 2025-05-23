@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
-// Define reward schema for coins
-const coinRewardSchema = new mongoose.Schema({
+// Define probability range schema
+const probabilityRangeSchema = new mongoose.Schema({
     min: {
         type: Number,
         required: true
@@ -12,63 +12,77 @@ const coinRewardSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
-// Define reward schema for gems
-const gemRewardSchema = new mongoose.Schema({
-    min: {
-        type: Number,
-        required: true
-    },
-    max: {
-        type: Number,
-        required: true
-    }
-}, { _id: false });
-
-// Define card chance schema for card rewards
-const cardChanceSchema = new mongoose.Schema({
-    rarity: {
+// Define reward schema for resource rewards
+const resourceRewardSchema = new mongoose.Schema({
+    reward_type: {
         type: String,
         required: true,
+        enum: ['resource', 'creature']
+    },
+    resource_type: {
+        type: String,
+        required: function() { return this.reward_type === 'resource'; },
+        enum: ['gold', 'gems', 'anima', 'arcane_energy']
+    },
+    creature_name: {
+        type: String, 
+        required: function() { return this.reward_type === 'creature'; }
+    },
+    rarity: {
+        type: String,
+        required: function() { return this.reward_type === 'creature'; },
         enum: ['common', 'rare', 'epic', 'legendary']
     },
-    count: {
+    amount: {
         type: Number,
-        required: true,
-        min: 1
+        required: function() { return this.reward_type === 'resource'; }
     },
     chance: {
         type: Number,
         required: true,
         min: 0,
         max: 100
+    },
+    probability_range: {
+        type: probabilityRangeSchema,
+        required: true
     }
+}, { _id: false });
+
+// Define card schema
+const cardSchema = new mongoose.Schema({
+    card_number: {
+        type: Number,
+        required: true
+    },
+    rewards: [resourceRewardSchema]
 }, { _id: false });
 
 // Define the ChestCard schema
 const chestCardSchema = new mongoose.Schema({
-    name: {
+    chest_id: {
         type: String,
         required: true,
-        trim: true
+        unique: true
     },
-    rarity: {
+    type: {
         type: String,
         required: true,
         enum: ['common', 'rare', 'epic', 'legendary']
     },
-    description: {
-        type: String,
+    chance: {
+        type: Number,
+        required: true,
+        min: 0,
+        max: 100
+    },
+    probability_range: {
+        type: probabilityRangeSchema,
         required: true
     },
     image_url: {
         type: String,
         default: '/images/chests/default.png'
-    },
-    unlock_time_minutes: {
-        type: Number,
-        required: true,
-        min: 0,
-        default: 180 // 3 hours default
     },
     drop_chance: {
         type: Number,
@@ -77,17 +91,13 @@ const chestCardSchema = new mongoose.Schema({
         max: 100,
         default: 10
     },
-    rewards: {
-        coins: {
-            type: coinRewardSchema,
-            required: true
-        },
-        gems: {
-            type: gemRewardSchema,
-            required: true
-        },
-        cards: [cardChanceSchema]
-    }
+    unlock_time_minutes: {
+        type: Number,
+        required: true,
+        min: 0,
+        default: 180 // 3 hours default
+    },
+    cards: [cardSchema]
 }, {
     timestamps: true
 });

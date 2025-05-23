@@ -1,5 +1,6 @@
 const User = require('../models/user');
 const logService = require('./logService');
+const questService = require('./questService');
 
 /**
  * Log in a user, creating a new user if they don't exist
@@ -22,15 +23,21 @@ async function login(userId, userName, additionalData = {}) {
             // Create new user if they don't exist
             user = new User({
                 userId,
-                user_name: userName || 'Player',
+                user_name: userName || userId,
+                gold_coins: 100, // starting gold
                 fcmToken: additionalData.fcmToken || null,
-                gold_coins: 500, // Default starting gold
-                buildings: [],
-                creatures: [],
-                creating_creatures: [],
                 deviceInfo: additionalData.deviceInfo || null,
-                // Set initial login time
-                login_time: new Date()
+                lastActiveIP: additionalData.ip || null,
+                login_time: new Date(),
+                quest_stats: {
+                    daily_completed: 0,
+                    weekly_completed: 0,
+                    monthly_completed: 0,
+                    total_completed: 0,
+                    last_daily_refresh: null,
+                    last_weekly_refresh: null,
+                    last_monthly_refresh: null
+                }
             });
             
             // Log user registration
@@ -59,10 +66,15 @@ async function login(userId, userName, additionalData = {}) {
                 user.deviceInfo = additionalData.deviceInfo;
             }
             
+            // Update IP if provided
+            if (additionalData.ip) {
+                user.lastActiveIP = additionalData.ip;
+            }
+            
             // Update any other additional fields
             if (additionalData && typeof additionalData === 'object') {
                 Object.keys(additionalData).forEach(key => {
-                    if (key !== 'fcmToken' && key !== 'deviceInfo') {
+                    if (key !== 'fcmToken' && key !== 'deviceInfo' && key !== 'ip') {
                         user[key] = additionalData[key];
                     }
                 });
@@ -83,6 +95,9 @@ async function login(userId, userName, additionalData = {}) {
             fcmToken: user.fcmToken ? true : false
         });
         
+        // Assign active quests to the user
+        const questsResult = await questService.assignActiveQuestsToUser(userId);
+        
         return {
             success: true,
             message: isNewUser ? 'New user created and logged in' : 'User logged in successfully',
@@ -94,7 +109,8 @@ async function login(userId, userName, additionalData = {}) {
                 xp: user.xp,
                 goldCoins: user.gold_coins,
                 login_time: user.login_time,
-                fcmToken: user.fcmToken ? true : null // Just indicate if token exists, don't return the actual token
+                fcmToken: user.fcmToken ? true : null, // Just indicate if token exists, don't return the actual token
+                quests: questsResult.data // Include assigned quests in response
             }
         };
     } catch (error) {

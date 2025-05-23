@@ -728,49 +728,22 @@ router.put('/:userId/buildings/:buildingId/position', async (req, res) => {
     }
 });
 
-router.delete('/:userId/buildings/:index/creatures/:creatureId', async (req, res) => {
+router.delete('/:userId/buildings/:buildingIndex/creatures/:creatureId', async (req, res) => {
     try {
-        const { userId, index, creatureId } = req.params;
-        console.log(`Deleting creature ${creatureId} from building ${index} for user ${userId}`);
+        const { userId, buildingIndex, creatureId } = req.params;
+        console.log(`Deleting creature ${creatureId} from building ${buildingIndex} for user ${userId}`);
 
-        // Get required models
-        const User = require('../models/user');
-
-        // Find user
-        const user = await User.findOne({ userId });
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+        // Call the service function to delete the creature from the building
+        const result = await deleteCreatureFromBuilding(userId, buildingIndex, creatureId);
+        
+        // Return the result
+        if (result.success) {
+            res.status(200).json(result);
+        } else {
+            res.status(400).json(result);
         }
-
-        // Find and remove the creature from user's creatures array
-        const creatureIndex = user.creatures.findIndex(c => 
-            c._id.toString() === creatureId || 
-            (c._id && c._id.toString() === creatureId)
-        );
-
-        if (creatureIndex === -1) {
-            return res.status(404).json({
-                success: false,
-                message: 'Creature not found'
-            });
-        }
-
-        // Remove the creature
-        user.creatures.splice(creatureIndex, 1);
-        await user.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'Creature deleted successfully',
-            data: {
-                deleted_creature_id: creatureId
-            }
-        });
     } catch (error) {
-        console.error('Error deleting creature:', error);
+        console.error('Error deleting creature from building:', error);
         res.status(500).json({
             success: false,
             message: error.message
@@ -2640,6 +2613,24 @@ router.post('/:userId/currency/:currencyType', async (req, res) => {
                 });
             }
             
+            // Track quest progress if gold is being spent
+            if (currencyType === 'gold' && amount < 0) {
+                try {
+                    // Import quest service
+                    const questService = require('../service/questService');
+                    
+                    // Track gold spending for quest progress
+                    await questService.trackQuestProgress(userId, 'spend_gold', {
+                        amount: Math.abs(amount)
+                    });
+                    
+                    console.log(`Tracked spend_gold quest progress for user ${userId}, amount: ${Math.abs(amount)}`);
+                } catch (questError) {
+                    console.error('Error updating quest progress for spend_gold:', questError);
+                    // Continue with response even if quest tracking fails
+                }
+            }
+            
             res.status(200).json({
                 success: true,
                 message: opResult.message || `${currencyType} ${amount >= 0 ? 'added' : 'removed'} successfully`,
@@ -2709,6 +2700,23 @@ router.post('/:userId/purchase', async (req, res) => {
         const result = await currencyService.purchaseWithGems(userId, type, parseInt(gems));
         
         if (result.success) {
+            // Track quest progress for spending gems
+            try {
+                // Import quest service
+                const questService = require('../service/questService');
+                
+                // Update quest progress for spending gems
+                await questService.trackQuestProgress(userId, 'spend_gems', {
+                    amount: parseInt(gems),
+                    purchase_type: type
+                });
+                
+                console.log(`Tracked spend_gems quest progress for user ${userId}, amount: ${gems}`);
+            } catch (questError) {
+                console.error('Error updating quest progress for spend_gems:', questError);
+                // Continue with response even if quest tracking fails
+            }
+            
             res.status(200).json(result);
         } else {
             res.status(400).json(result);
@@ -3631,6 +3639,22 @@ router.get('/:userId/level-info', async (req, res) => {
             success: false,
             message: `Server error: ${error.message}`
         });
+    }
+});
+
+// Add this route after the other building-creature related routes
+
+// Fix building-creature relationships
+router.post('/:userId/fix-building-creatures', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Fixing building-creature relationships for user ${userId}`);
+        
+        const result = await fixBuildingCreatureRelationships(userId);
+        res.status(result.success ? 200 : 400).json(result);
+    } catch (error) {
+        console.error('Error fixing building-creature relationships:', error);
+        res.status(500).json({ success: false, message: `Error: ${error.message}` });
     }
 });
 
