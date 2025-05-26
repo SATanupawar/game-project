@@ -46,6 +46,7 @@ const Creature = require('./models/creature');
 const mongoose = require('mongoose');
 const Building = require('./models/building');
 const userService = require('./service/userService');
+const leaderboardRoutes = require('./routes/leaderboardRoute');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -82,6 +83,9 @@ app.use('/api/building-decorations', buildingDecorationRoutes);
 app.use('/api/chests', chestRoutes);
 app.use('/api/arcane-energy', arcaneEnergyRoutes);
 app.use('/api/push-notifications', pushNotificationRoutes);
+
+// Add to your routes
+app.use('/api', leaderboardRoutes);
 
 // Direct creature purchase route to bypass any conflicts with userRoutes
 app.post('/api/user/:userId/creature/purchase', async (req, res) => {
