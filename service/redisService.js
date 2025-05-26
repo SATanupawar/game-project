@@ -1,18 +1,38 @@
 // In a new file: service/redisService.js
 const redis = require('redis');
 
-// Create Redis client
+// Create Redis client with better retry strategy
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  socket: {
+    connectTimeout: 10000,
+    reconnectStrategy: (retries) => {
+      // Exponential backoff with cap
+      if (retries > 10) {
+        console.log('Redis reconnection attempts exceeded 10, stopping reconnects');
+        return new Error('Redis connection attempts exceeded');
+      }
+      const delay = Math.min(Math.pow(2, retries) * 100, 3000);
+      console.log(`Redis reconnecting in ${delay}ms...`);
+      return delay;
+    }
+  }
 });
 
 // Handle connection events
 redisClient.on('connect', () => console.log('Redis connected'));
+redisClient.on('ready', () => console.log('Redis ready for commands'));
 redisClient.on('error', (err) => console.error('Redis error:', err));
+redisClient.on('reconnecting', () => console.log('Redis reconnecting...'));
+redisClient.on('end', () => console.log('Redis connection closed'));
 
 // Connect to Redis
 (async () => {
-  await redisClient.connect();
+  try {
+    await redisClient.connect();
+  } catch (err) {
+    console.error('Failed to connect to Redis:', err);
+  }
 })();
 
 // Create wrapper functions with proper method names for Redis v5.1.0
@@ -22,13 +42,23 @@ const redisWrapper = {
   
   // Wrapper methods that maintain compatibility
   zAdd: async (key, members) => {
-    // Convert array format to what redis v5.1.0 expects
-    return await redisClient.zAdd(key, members);
+    try {
+      // Convert array format to what redis v5.1.0 expects
+      return await redisClient.zAdd(key, members);
+    } catch (err) {
+      console.error('Error in zAdd:', err);
+      return 0;
+    }
   },
   
-  zRevRange: async (key, start, stop) => {
+  zRevRange: async (key, start, stop, options = {}) => {
     // For Redis v5.1.0, we need to use zRange with REV option
     try {
+      // Check if options include WITHSCORES
+      if (options === 'WITHSCORES') {
+        const result = await redisClient.zRange(key, start, stop, { REV: true, WITHSCORES: true });
+        return result;
+      }
       const result = await redisClient.zRange(key, start, stop, { REV: true });
       return result;
     } catch (err) {
@@ -49,11 +79,142 @@ const redisWrapper = {
   },
   
   zScore: async (key, member) => {
-    return await redisClient.zScore(key, member);
+    try {
+      return await redisClient.zScore(key, member);
+    } catch (err) {
+      console.error('Error in zScore:', err);
+      return null;
+    }
   },
   
   del: async (key) => {
-    return await redisClient.del(key);
+    try {
+      return await redisClient.del(key);
+    } catch (err) {
+      console.error('Error in del:', err);
+      return 0;
+    }
+  },
+
+  // Cache with expiration
+  setEx: async (key, seconds, value) => {
+    try {
+      return await redisClient.setEx(key, seconds, value);
+    } catch (err) {
+      console.error('Error in setEx:', err);
+      return null;
+    }
+  },
+
+  // Get cached value
+  get: async (key) => {
+    try {
+      return await redisClient.get(key);
+    } catch (err) {
+      console.error('Error in get:', err);
+      return null;
+    }
+  },
+
+  // Cache JSON data with expiration
+  setJson: async (key, data, expireSeconds = 3600) => {
+    try {
+      const jsonString = JSON.stringify(data);
+      return await redisClient.setEx(key, expireSeconds, jsonString);
+    } catch (err) {
+      console.error('Error in setJson:', err);
+      return null;
+    }
+  },
+
+  // Get cached JSON data
+  getJson: async (key) => {
+    try {
+      const jsonString = await redisClient.get(key);
+      if (!jsonString) return null;
+      return JSON.parse(jsonString);
+    } catch (err) {
+      console.error('Error in getJson:', err);
+      return null;
+    }
+  },
+
+  // Function to prebuild and cache leaderboard data
+  prebuildLeaderboard: async (limit = 500) => {
+    try {
+      console.log(`Pre-building top ${limit} leaderboard...`);
+      const startTime = Date.now();
+      
+      // Get the top X user IDs with their scores from Redis
+      const topUserIds = await redisClient.zRange('leaderboard:global', 0, limit - 1, { REV: true, WITHSCORES: true });
+      
+      if (topUserIds.length === 0) {
+        console.log('No data in leaderboard, skipping prebuild');
+        return false;
+      }
+      
+      const leaderboard = [];
+      let currentRank = 1;
+      let previousScore = -1;
+      
+      // Process the Redis results (comes as [userId1, score1, userId2, score2, ...])
+      for (let i = 0; i < topUserIds.length; i += 2) {
+        const userId = topUserIds[i];
+        const trophies = parseInt(topUserIds[i + 1]);
+        
+        // Get user data from Redis hash
+        const userData = await redisClient.hGetAll(`user:${userId}`);
+        
+        // If trophy count is different from previous user, increment rank
+        if (trophies !== previousScore) {
+          currentRank = leaderboard.length + 1;
+          previousScore = trophies;
+        }
+        
+        if (userData && Object.keys(userData).length > 0) {
+          leaderboard.push({
+            rank: currentRank,
+            userId,
+            username: userData.username || 'Unknown',
+            trophies,
+            profilePicture: userData.profilePicture || 'default.jpg',
+            level: parseInt(userData.level) || 1,
+            title: userData.title || ''
+          });
+        } else {
+          // If user data not in Redis, add basic entry
+          leaderboard.push({
+            rank: currentRank,
+            userId,
+            username: 'Unknown',
+            trophies,
+            profilePicture: 'default.jpg',
+            level: 1,
+            title: ''
+          });
+        }
+      }
+      
+      // Cache the built leaderboard for 5 minutes
+      await redisWrapper.setJson('cached:leaderboard:top', leaderboard, 300);
+      
+      const endTime = Date.now();
+      console.log(`Leaderboard prebuild completed in ${endTime - startTime}ms`);
+      return true;
+    } catch (err) {
+      console.error('Error in prebuildLeaderboard:', err);
+      return false;
+    }
+  },
+
+  // Get count of members in a sorted set
+  zCard: async (key) => {
+    try {
+      return await redisClient.zCard(key);
+    } catch (err) {
+      console.error('Error in zCard:', err);
+      return 0;
+    }
   }
 };
 
