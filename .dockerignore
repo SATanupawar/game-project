@@ -1,0 +1,44 @@
+# Dependency directories
+node_modules
+npm-debug.log
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Git and GitHub related files
+.git
+.github
+.gitignore
+
+# Logs
+logs
+*.log
+
+# Build artifacts
+dist
+build
+coverage
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (not needed inside container)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Other unnecessary files
+README.md
+LICENSE
+*.md 
