@@ -1,5 +1,6 @@
+const mongoose = require('mongoose');
 const User = require('../models/user');
-const redisClient = require('./redisService');
+const redisWrapper = require('./redisService');
 
 /**
  * Leaderboard service to handle high-volume trophy updates efficiently
@@ -40,7 +41,7 @@ class LeaderboardService {
     
     try {
       // Execute atomic trophy update in Redis
-      const result = await redisClient.client.eval(
+      const result = await redisWrapper.client.eval(
         luaScript,
         {
           keys: [], // No keys needed for this script
@@ -63,12 +64,12 @@ class LeaderboardService {
       };
       
       if (Object.keys(userDataToStore).length > 0) {
-        await redisClient.client.hSet(`user:${userId}`, userDataToStore);
+        await redisWrapper.client.hSet(`user:${userId}`, userDataToStore);
       }
       
       // Invalidate cached leaderboard if trophy change is significant
       if (Math.abs(trophyChange) >= 100) {
-        redisClient.del('cached:leaderboard:top')
+        redisWrapper.del('cached:leaderboard:top')
           .catch(err => console.error('Error invalidating leaderboard cache:', err));
       }
       
@@ -92,9 +93,9 @@ class LeaderboardService {
   async getPlayerRank(userId) {
     try {
       // Try to get rank from Redis first (much faster)
-      const rank = await redisClient.zRevRank('leaderboard:global', userId);
-      const userTrophies = await redisClient.zScore('leaderboard:global', userId);
-      let userData = await redisClient.client.hGetAll(`user:${userId}`);
+      const rank = await redisWrapper.zRevRank('leaderboard:global', userId);
+      const userTrophies = await redisWrapper.zScore('leaderboard:global', userId);
+      let userData = await redisWrapper.client.hGetAll(`user:${userId}`);
       
       // If we have data in Redis
       if (rank !== null && userTrophies !== null) {
@@ -116,7 +117,7 @@ class LeaderboardService {
               };
               
               // Store for next time
-              await redisClient.client.hSet(`user:${userId}`, {
+              await redisWrapper.client.hSet(`user:${userId}`, {
                 ...userData,
                 trophies: userTrophies
               });
@@ -161,11 +162,11 @@ class LeaderboardService {
       const trophies = user.trophy_count || 0;
       
       // Update Redis for next time
-      await redisClient.zAdd('leaderboard:global', [
+      await redisWrapper.zAdd('leaderboard:global', [
         { score: trophies, value: userId }
       ]);
       
-      await redisClient.client.hSet(`user:${userId}`, {
+      await redisWrapper.client.hSet(`user:${userId}`, {
         userId,
         username: user.user_name || 'Unknown',
         trophies,
@@ -197,23 +198,23 @@ class LeaderboardService {
   async getTopPlayers(limit = 500) {
     try {
       // First check if we have a pre-built cached leaderboard
-      const cachedLeaderboard = await redisClient.getJson('cached:leaderboard:top');
+      const cachedLeaderboard = await redisWrapper.getJson('cached:leaderboard:top');
       if (cachedLeaderboard) {
         console.log('Using pre-built cached leaderboard');
         return cachedLeaderboard.slice(0, limit);
       }
       
       // Try to rebuild the leaderboard and return it
-      await redisClient.prebuildLeaderboard(limit);
+      await redisWrapper.prebuildLeaderboard(limit);
       
       // Try again to get the cached leaderboard
-      const rebuiltLeaderboard = await redisClient.getJson('cached:leaderboard:top');
+      const rebuiltLeaderboard = await redisWrapper.getJson('cached:leaderboard:top');
       if (rebuiltLeaderboard) {
         return rebuiltLeaderboard.slice(0, limit);
       }
       
       // Fall back to direct Redis/MongoDB as a last resort
-      const topUserIds = await redisClient.zRevRange('leaderboard:global', 0, limit - 1, 'WITHSCORES');
+      const topUserIds = await redisWrapper.zRevRange('leaderboard:global', 0, limit - 1, 'WITHSCORES');
       
       if (topUserIds.length === 0) {
         // Completely fall back to MongoDB
@@ -243,7 +244,7 @@ class LeaderboardService {
           });
           
           // Update Redis in background
-          redisClient.zAdd('leaderboard:global', [{ 
+          redisWrapper.zAdd('leaderboard:global', [{ 
             score: user.trophy_count || 0, 
             value: user.userId 
           }]).catch(err => console.error('Redis update error:', err));
@@ -276,7 +277,7 @@ class LeaderboardService {
         };
         
         // Try to get user data from Redis
-        const redisUserData = await redisClient.client.hGetAll(`user:${userId}`);
+        const redisUserData = await redisWrapper.client.hGetAll(`user:${userId}`);
         if (redisUserData && Object.keys(redisUserData).length > 0) {
           userData = {
             username: redisUserData.username || 'Unknown',

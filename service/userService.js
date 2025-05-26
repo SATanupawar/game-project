@@ -4,6 +4,7 @@ const Creature = require('../models/creature');
 const mongoose = require('mongoose');
 const Boost = require('../models/boost');
 const BuildingDecoration = require('../models/buildingDecoration');
+const questService = require('./questService');
 
 async function getUserWithDetails(userIdParam) {
     try {
@@ -3543,6 +3544,12 @@ async function assignDecorationToUser(userIdParam, decorationId, position) {
 
         // Save the user document
         await user.save();
+
+        // Track quest progress for place_decoration action
+        await questService.trackQuestProgress(user.userId, 'place_decoration', {
+            decorationId: decorationTemplate.decorationId,
+            decorationName: decorationTemplate.name
+        });
 
         return {
             success: true,

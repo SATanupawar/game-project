@@ -160,6 +160,22 @@ const userQuestSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+const completedQuestSchema = new mongoose.Schema({
+    quest_id: {
+        type: String,
+        required: true
+    },
+    completed_at: {
+        type: Date,
+        default: Date.now
+    },
+    type: {
+        type: String,
+        enum: ['daily', 'weekly', 'monthly'],
+        required: true
+    }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -451,11 +467,7 @@ const userSchema = new mongoose.Schema({
     }],
     // Add to userSchema
     active_quests: [userQuestSchema],
-    completed_quests: [{
-        quest_id: String,
-        completed_at: Date,
-        type: String // daily, weekly, monthly
-    }],
+    completed_quests: [completedQuestSchema],
     quest_stats: {
         daily_completed: {
             type: Number,

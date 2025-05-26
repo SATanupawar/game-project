@@ -35,7 +35,7 @@ redisClient.on('end', () => console.log('Redis connection closed'));
   }
 })();
 
-// Create wrapper functions with proper method names for Redis v5.1.0
+// Create wrapper functions using raw commands for Redis v5.1.0 compatibility
 const redisWrapper = {
   // Original client for direct access if needed
   client: redisClient,
@@ -43,8 +43,28 @@ const redisWrapper = {
   // Wrapper methods that maintain compatibility
   zAdd: async (key, members) => {
     try {
-      // Convert array format to what redis v5.1.0 expects
-      return await redisClient.zAdd(key, members);
+      // Use the raw sendCommand method for compatibility
+      if (Array.isArray(members)) {
+        const args = ['ZADD', key];
+        
+        // Format each member as score, value pairs
+        for (const member of members) {
+          if (member.score !== undefined && member.value !== undefined) {
+            args.push(member.score.toString());
+            args.push(member.value);
+          }
+        }
+        
+        return await redisClient.sendCommand(args);
+      } else {
+        // Handle single member case
+        return await redisClient.sendCommand([
+          'ZADD', 
+          key, 
+          members.score.toString(), 
+          members.value
+        ]);
+      }
     } catch (err) {
       console.error('Error in zAdd:', err);
       return 0;
@@ -52,15 +72,18 @@ const redisWrapper = {
   },
   
   zRevRange: async (key, start, stop, options = {}) => {
-    // For Redis v5.1.0, we need to use zRange with REV option
+    // Use the sendCommand method with ZREVRANGE which is more compatible
     try {
+      // Build args for ZREVRANGE command
+      const args = ['ZREVRANGE', key, start.toString(), stop.toString()];
+      
       // Check if options include WITHSCORES
       if (options === 'WITHSCORES') {
-        const result = await redisClient.zRange(key, start, stop, { REV: true, WITHSCORES: true });
-        return result;
+        args.push('WITHSCORES');
       }
-      const result = await redisClient.zRange(key, start, stop, { REV: true });
-      return result;
+      
+      // Execute the command
+      return await redisClient.sendCommand(args);
     } catch (err) {
       console.error('Error in zRevRange:', err);
       return [];
@@ -68,9 +91,9 @@ const redisWrapper = {
   },
   
   zRevRank: async (key, member) => {
-    // For Redis v5.1.0, zRevRank is implemented differently
+    // For Redis v5.1.0, use ZREVRANK directly
     try {
-      const rank = await redisClient.zRank(key, member, { REV: true });
+      const rank = await redisClient.sendCommand(['ZREVRANK', key, member]);
       return rank;
     } catch (err) {
       console.error('Error in zRevRank:', err);
@@ -80,7 +103,7 @@ const redisWrapper = {
   
   zScore: async (key, member) => {
     try {
-      return await redisClient.zScore(key, member);
+      return await redisClient.sendCommand(['ZSCORE', key, member]);
     } catch (err) {
       console.error('Error in zScore:', err);
       return null;
@@ -145,10 +168,16 @@ const redisWrapper = {
       console.log(`Pre-building top ${limit} leaderboard...`);
       const startTime = Date.now();
       
-      // Get the top X user IDs with their scores from Redis
-      const topUserIds = await redisClient.zRange('leaderboard:global', 0, limit - 1, { REV: true, WITHSCORES: true });
+      // Use the sendCommand method directly with ZREVRANGE
+      const topUserIds = await redisClient.sendCommand([
+        'ZREVRANGE', 
+        'leaderboard:global', 
+        '0', 
+        (limit - 1).toString(), 
+        'WITHSCORES'
+      ]);
       
-      if (topUserIds.length === 0) {
+      if (!topUserIds || topUserIds.length === 0) {
         console.log('No data in leaderboard, skipping prebuild');
         return false;
       }
@@ -210,7 +239,7 @@ const redisWrapper = {
   // Get count of members in a sorted set
   zCard: async (key) => {
     try {
-      return await redisClient.zCard(key);
+      return await redisClient.sendCommand(['ZCARD', key]);
     } catch (err) {
       console.error('Error in zCard:', err);
       return 0;

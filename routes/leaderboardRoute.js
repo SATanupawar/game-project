@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
-const redisClient = require('../service/redisService');
+const redisWrapper = require('../service/redisService');
 
 // Update player score
 router.post('/player/update-score', async (req, res) => {
@@ -44,19 +44,23 @@ router.post('/player/update-score', async (req, res) => {
     });
     
     // Update Redis with new total trophies
-    await redisClient.zAdd('leaderboard:global', [
+    await redisWrapper.zAdd('leaderboard:global', [
       { score: newTotalTrophies, value: userId }
     ]);
 
     // Also store user data in a Redis hash for quick access
-    await redisClient.client.hSet(`user:${userId}`, {
+    await redisWrapper.client.hSet(`user:${userId}`, {
       userId,
       username: username || user.user_name,
-      trophies: newTotalTrophies,
+      trophies: newTotalTrophies.toString(),
       profilePicture: user.profile_picture || 'default.jpg',
-      level: user.level || 1,
+      level: (user.level || 1).toString(),
       title: user.title || ''
     });
+    
+    // Invalidate the cached leaderboard to ensure immediate updates
+    await redisWrapper.del('cached:leaderboard:top');
+    console.log('Leaderboard cache invalidated after trophy update');
     
     res.status(200).json({ 
       success: true,
@@ -84,7 +88,7 @@ router.get('/leaderboard/top', async (req, res) => {
     const startTime = Date.now();
     
     // First check if we have a pre-built cached leaderboard
-    const cachedLeaderboard = await redisClient.getJson('cached:leaderboard:top');
+    const cachedLeaderboard = await redisWrapper.getJson('cached:leaderboard:top');
     if (cachedLeaderboard) {
       console.log('Using pre-built cached leaderboard');
       const endTime = Date.now();
@@ -101,7 +105,7 @@ router.get('/leaderboard/top', async (req, res) => {
     const limit = 500;
     
     // Get the top 500 user IDs with their scores from Redis
-    const topUserIds = await redisClient.zRevRange(redisKey, 0, limit - 1, 'WITHSCORES');
+    const topUserIds = await redisWrapper.zRevRange(redisKey, 0, limit - 1, 'WITHSCORES');
     
     // Check if we have data in Redis
     if (topUserIds.length > 0) {
@@ -112,7 +116,7 @@ router.get('/leaderboard/top', async (req, res) => {
       let previousScore = -1;
       
       // Get all user data in bulk for better performance
-      const pipeline = redisClient.client.multi();
+      const pipeline = redisWrapper.client.multi();
       
       for (let i = 0; i < topUserIds.length; i += 2) {
         const userId = topUserIds[i];
@@ -148,7 +152,7 @@ router.get('/leaderboard/top', async (req, res) => {
               });
               
               if (user) {
-                await redisClient.client.hSet(`user:${userId}`, {
+                await redisWrapper.client.hSet(`user:${userId}`, {
                   userId,
                   username: user.user_name || 'Unknown',
                   trophies,
@@ -181,7 +185,7 @@ router.get('/leaderboard/top', async (req, res) => {
       }
       
       // Cache the leaderboard for 5 minutes in the background
-      redisClient.setJson('cached:leaderboard:top', leaderboard, 300)
+      redisWrapper.setJson('cached:leaderboard:top', leaderboard, 300)
         .catch(err => console.error('Error caching leaderboard:', err));
       
       const endTime = Date.now();
@@ -215,7 +219,7 @@ router.get('/leaderboard/top', async (req, res) => {
     let previousTrophies = -1;
     
     // Prepare batch Redis operations
-    const redisPipeline = redisClient.client.multi();
+    const redisPipeline = redisWrapper.client.multi();
     
     for (const user of users) {
       // If trophy count is different from previous user, increment rank
@@ -237,18 +241,20 @@ router.get('/leaderboard/top', async (req, res) => {
       leaderboard.push(userData);
       
       // Add to Redis sorted set
-      redisPipeline.zAdd(redisKey, [{
-        score: user.trophy_count || 0,
-        value: user.userId
-      }]);
+      redisPipeline.sendCommand([
+        'ZADD',
+        redisKey,
+        (user.trophy_count || 0).toString(),
+        user.userId
+      ]);
       
       // Also store user data in Redis hash
       redisPipeline.hSet(`user:${user.userId}`, {
         userId: user.userId,
         username: user.user_name || 'Unknown',
-        trophies: user.trophy_count || 0,
+        trophies: (user.trophy_count || 0).toString(),
         profilePicture: user.profile_picture || 'default.jpg',
-        level: user.level || 1,
+        level: (user.level || 1).toString(),
         title: user.title || ''
       });
     }
@@ -257,7 +263,7 @@ router.get('/leaderboard/top', async (req, res) => {
     await redisPipeline.exec();
     
     // Cache the leaderboard for 5 minutes
-    await redisClient.setJson('cached:leaderboard:top', leaderboard, 300);
+    await redisWrapper.setJson('cached:leaderboard:top', leaderboard, 300);
     
     const endTime = Date.now();
     console.log(`Leaderboard request processed in ${endTime - startTime}ms`);
@@ -284,8 +290,8 @@ router.get('/leaderboard/rank/:userId', async (req, res) => {
     const startTime = Date.now();
     
     // Try to get rank from Redis first (much faster)
-    const rank = await redisClient.zRevRank('leaderboard:global', userId);
-    let userData = await redisClient.client.hGetAll(`user:${userId}`);
+    const rank = await redisWrapper.zRevRank('leaderboard:global', userId);
+    let userData = await redisWrapper.client.hGetAll(`user:${userId}`);
     
     // If we have both rank and user data in Redis
     if (rank !== null && userData && Object.keys(userData).length > 0) {
@@ -340,12 +346,12 @@ router.get('/leaderboard/rank/:userId', async (req, res) => {
     console.log(`User: ${userId}, Calculated Rank: ${calculatedRank}, Trophies: ${user.trophy_count}`);
     
     // Update Redis to ensure consistency
-    await redisClient.zAdd('leaderboard:global', [
+    await redisWrapper.zAdd('leaderboard:global', [
       { score: user.trophy_count || 0, value: userId }
     ]);
     
     // Store user data in Redis hash
-    await redisClient.client.hSet(`user:${userId}`, {
+    await redisWrapper.client.hSet(`user:${userId}`, {
       userId,
       username: user.user_name || 'Unknown',
       trophies: user.trophy_count || 0,
