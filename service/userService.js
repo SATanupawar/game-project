@@ -3752,9 +3752,9 @@ async function getDebugBuildingInfo(userIdParam, buildingIdentifier) {
 }
 
 // Purchase a creature using anima currency
-async function purchaseCreature(userId, creatureType) {
+async function purchaseCreature(userId, creatureType, slotNumber = 1) {
     try {
-        console.log(`Purchasing creature ${creatureType} for user ${userId} with anima`);
+        console.log(`Purchasing creature ${creatureType} for user ${userId} with anima in slot ${slotNumber}`);
         
         // Find the user
         const user = await User.findOne({ userId });
@@ -3796,35 +3796,135 @@ async function purchaseCreature(userId, creatureType) {
             };
         }
         
+        // Check slot availability
+        // First, load the CreatureSlot model to get slot configuration
+        const CreatureSlot = mongoose.model('CreatureSlot');
+        const slotConfigs = await CreatureSlot.find().sort({ slot_number: 1 });
+        
+        // Get the configuration for the requested slot
+        const slotConfig = slotConfigs.find(s => s.slot_number === parseInt(slotNumber));
+        if (!slotConfig) {
+            return {
+                success: false,
+                message: `Invalid slot number: ${slotNumber}. No configuration found.`
+            };
+        }
+        
+        console.log(`Slot ${slotNumber} config:`, slotConfig);
+        
+        // Initialize creature_slots if it doesn't exist
+        if (!user.creature_slots || !Array.isArray(user.creature_slots)) {
+            user.creature_slots = [
+                { slot_number: 1, is_unlocked: true, unlocked_at: new Date() }
+            ];
+        }
+        
+        // First, check if there's already a creature being unlocked in this slot
+        const isSlotInUse = user.creating_creatures && user.creating_creatures.some(c => 
+            c.slot_number === parseInt(slotNumber)
+        );
+        
+        if (isSlotInUse) {
+            return {
+                success: false,
+                message: `Slot ${slotNumber} already has a creature being unlocked. Only one creature can be unlocked at a time per slot.`
+            };
+        }
+        
+        // Find if the requested slot is unlocked
+        const requestedSlot = user.creature_slots.find(slot => 
+            slot.slot_number === parseInt(slotNumber) && slot.is_unlocked
+        );
+        
+        if (!requestedSlot) {
+            // Slot 1 is always free
+            if (parseInt(slotNumber) === 1) {
+                user.creature_slots.push({
+                    slot_number: 1,
+                    is_unlocked: true,
+                    unlocked_at: new Date()
+                });
+                user.markModified('creature_slots');
+                console.log(`Slot 1 is free and always available for user ${userId}`);
+            } 
+            // Slots 2-5 have specific requirements
+            else {
+                // If it's an elite slot, check if user is elite
+                if (slotConfig.is_elite) {
+                    const isEliteUser = user.elite_pass && user.elite_pass.active;
+                    if (!isEliteUser) {
+                        return {
+                            success: false,
+                            message: `Slot ${slotNumber} is only available for elite users.`
+                        };
+                    }
+                }
+                
+                // If the slot has a gold cost, check if user has enough gold
+                if (slotConfig.gold_cost > 0) {
+                    if (user.gold_coins < slotConfig.gold_cost) {
+                        return {
+                            success: false,
+                            message: `Not enough gold coins to unlock slot ${slotNumber}. Required: ${slotConfig.gold_cost}, Available: ${user.gold_coins}`
+                        };
+                    }
+                    
+                    // Deduct gold and unlock the slot
+                    user.gold_coins -= slotConfig.gold_cost;
+                    console.log(`Deducted ${slotConfig.gold_cost} gold from user. New balance: ${user.gold_coins}`);
+                }
+                
+                // Unlock the slot
+                user.creature_slots.push({
+                    slot_number: parseInt(slotNumber),
+                    is_unlocked: true,
+                    unlocked_at: new Date()
+                });
+                user.markModified('creature_slots');
+                console.log(`Unlocked slot ${slotNumber} for user ${userId}`);
+            }
+        }
+        
         // Initialize creating_creatures array if it doesn't exist
         if (!user.creating_creatures) {
             user.creating_creatures = [];
         }
         
         // Store the unlockTimeMinutes, but don't start the timer yet
-        const unlockTimeMinutes = creatureTemplate.unlock_time || 10; // Default 10 minutes if not specified
+        const unlockTimeMinutes = creatureTemplate.unlock_time || 10;
         
-        // Create creature purchase entry with unlock_started set to false
-        const creaturePurchase = {
+        // Calculate default times (even though unlock hasn't started)
+        const currentTime = new Date();
+        const futureTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
+        
+        // Create a properly structured object directly without using a temporary model
+        // This avoids the "Cannot overwrite model" error
+        const creatureDoc = {
             _id: new mongoose.Types.ObjectId(),
             creature_id: creatureTemplate._id,
             creature_type: creatureTemplate.creature_Id,
             name: creatureTemplate.name,
             unlock_time: unlockTimeMinutes,
-            unlock_started: false, // Flag to indicate the unlock hasn't started yet
-            started_time: null, // Will be set when unlock starts
-            finished_time: null, // Will be set when unlock starts
+            unlock_started: false,
+            started_time: currentTime,
+            finished_time: futureTime,
             level: 1,
             base_attack: creatureTemplate.base_attack,
             base_health: creatureTemplate.base_health,
             gold_coins: creatureTemplate.gold_coins,
             image: creatureTemplate.image || 'default.png',
             description: creatureTemplate.description || '',
-            anima_cost: animaCost
+            anima_cost: animaCost,
+            slot_number: parseInt(slotNumber) || 1
         };
         
+        console.log("Created creature purchase with slot number:", creatureDoc.slot_number, "Type:", typeof creatureDoc.slot_number);
+        
         // Add to creating creatures array
-        user.creating_creatures.push(creaturePurchase);
+        if (!Array.isArray(user.creating_creatures)) {
+            user.creating_creatures = [];
+        }
+        user.creating_creatures.push(creatureDoc);
         
         // Subtract anima from user currency
         user.currency.anima -= animaCost;
@@ -3834,21 +3934,36 @@ async function purchaseCreature(userId, creatureType) {
         // Save user
         await user.save();
         
+        // Prepare a message based on whether gold was spent for the slot
+        let purchaseMessage = `Creature ${creatureTemplate.name} purchased successfully with anima`;
+        if (slotConfig && slotConfig.gold_cost > 0) {
+            purchaseMessage += ` and placed in slot ${slotNumber} (cost: ${slotConfig.gold_cost} gold)`;
+        } else {
+            purchaseMessage += ` and placed in slot ${slotNumber}`;
+        }
+        
         return {
             success: true,
-            message: `Creature ${creatureTemplate.name} purchased successfully with anima`,
+            message: purchaseMessage,
             data: {
                 creature: {
-                    _id: creaturePurchase._id,
+                    _id: creatureDoc._id,
                     name: creatureTemplate.name,
                     type: creatureTemplate.type || 'common',
                     unlock_time: unlockTimeMinutes,
                     anima_cost: animaCost,
-                    unlock_started: false
+                    unlock_started: false,
+                    slot_number: parseInt(slotNumber)
+                },
+                slot_info: {
+                    slot_number: parseInt(slotNumber),
+                    is_elite: slotConfig ? slotConfig.is_elite : false,
+                    gold_cost: slotConfig ? slotConfig.gold_cost : 0
                 },
                 user: {
                     userId: user.userId,
                     anima_balance: user.currency.anima,
+                    gold_coins: user.gold_coins,
                     creating_creatures_count: user.creating_creatures.length
                 }
             }
@@ -3870,8 +3985,8 @@ async function checkCreatureUnlockStatus(userId) {
         // Find the user
         const user = await User.findOne({ userId });
         if (!user) {
-            return {
-                success: false,
+                return {
+                    success: false,
                 message: 'User not found'
             };
         }
@@ -3915,7 +4030,8 @@ async function checkCreatureUnlockStatus(userId) {
                 base_health: creature.base_health,
                 gold_coins: creature.gold_coins,
                 image: creature.image,
-                description: creature.description
+                description: creature.description,
+                slot_number: creature.slot_number || 1
             };
             
             if (isReady) {
@@ -3954,16 +4070,16 @@ async function unlockCreature(userId, creatureId, forceUnlock = false) {
         // Find the user
         const user = await User.findOne({ userId });
         if (!user) {
-            return {
-                success: false,
+                return {
+                    success: false,
                 message: 'User not found'
             };
         }
         
         // Check if creating_creatures exists
         if (!user.creating_creatures || user.creating_creatures.length === 0) {
-            return {
-                success: false,
+                return {
+                    success: false,
                 message: 'No creatures in creation queue'
             };
         }
@@ -3974,8 +4090,8 @@ async function unlockCreature(userId, creatureId, forceUnlock = false) {
         );
         
         if (creatureIndex === -1) {
-            return {
-                success: false,
+                return {
+                    success: false,
                 message: 'Creature not found in creation queue'
             };
         }
@@ -3989,8 +4105,8 @@ async function unlockCreature(userId, creatureId, forceUnlock = false) {
             const remainingTimeMs = finishedTime - currentTime;
             const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
             
-            return {
-                success: false,
+                return {
+                    success: false,
                 message: `Creature is not ready to unlock yet. ${remainingMinutes} minutes remaining.`,
                 data: {
                     remaining_minutes: remainingMinutes,
@@ -4019,18 +4135,37 @@ async function unlockCreature(userId, creatureId, forceUnlock = false) {
             gold_coins: creature.gold_coins || 0,
             count: 1,
             image: creature.image,
-            description: creature.description
+            description: creature.description,
+            slot_number: creature.slot_number || 1 // Maintain the slot number from creation
         };
         
         // Add the creature to the user's creatures array
         user.creatures.push(newCreature);
         
+        // Get the slot number before removing the creature
+        const slotNumber = creature.slot_number || 1;
+        
         // Remove the creature from the creation queue
         user.creating_creatures.splice(creatureIndex, 1);
+        
+        // Lock the slot again (except slot 1 which is always unlocked)
+        if (slotNumber > 1) {
+            // Find this slot in creature_slots array
+            const slotIndex = user.creature_slots.findIndex(slot => 
+                slot.slot_number === slotNumber && slot.is_unlocked
+            );
+            
+            if (slotIndex !== -1) {
+                // Lock the slot by removing it from the unlocked slots
+                user.creature_slots.splice(slotIndex, 1);
+                console.log(`Locked slot ${slotNumber} after creature unlock completed`);
+            }
+        }
         
         // Mark arrays as modified
         user.markModified('creatures');
         user.markModified('creating_creatures');
+        user.markModified('creature_slots');
         
         // Save the user
         await user.save();
@@ -4350,3 +4485,4 @@ module.exports = {
     startCreatureUnlock,
     fixBuildingCreatureRelationships
 };
+        

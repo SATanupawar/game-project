@@ -176,6 +176,24 @@ const completedQuestSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+// Define schema for user creature slots
+const userCreatureSlotsSchema = new mongoose.Schema({
+    slot_number: {
+        type: Number,
+        required: true,
+        min: 1,
+        max: 5
+    },
+    is_unlocked: {
+        type: Boolean,
+        default: false
+    },
+    unlocked_at: {
+        type: Date,
+        default: null
+    }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -217,6 +235,8 @@ const userSchema = new mongoose.Schema({
         required: true,
         max: 100000000
     },
+    // Creature slots that the user has unlocked
+    creature_slots: [userCreatureSlotsSchema],
     buildings: [{
         buildingId: String,
         name: String,
@@ -288,6 +308,13 @@ const userSchema = new mongoose.Schema({
         last_upgrade_click_time: {
             type: Date,
             default: null
+        },
+        // Add slot information to existing creatures
+        slot_number: {
+            type: Number,
+            min: 1,
+            max: 5,
+            default: null
         }
     }],
     creating_creatures: [{
@@ -322,6 +349,14 @@ const userSchema = new mongoose.Schema({
         anima_cost: {
             type: Number,
             required: true
+        },
+        // Add slot information to creatures being created with default value 1
+        slot_number: {
+            type: Number,
+            min: 1,
+            max: 5,
+            required: true,
+            default: 1 // Add default value to avoid validation errors
         }
     }],
     battle_selected_creatures: [battleCreatureSchema],
@@ -589,5 +624,21 @@ userSchema.methods.getXPProgress = async function() {
     const UserLevel = mongoose.model('UserLevel');
     return await UserLevel.getXPProgress(this.xp);
 };
+
+// Add pre-save hook to fix any issues with slot_number in creating_creatures
+userSchema.pre('save', function(next) {
+    // Fix slot_number in creating_creatures if it exists
+    if (this.creating_creatures && Array.isArray(this.creating_creatures)) {
+        this.creating_creatures.forEach(creature => {
+            // Ensure slot_number is set as a Number
+            if (creature.slot_number === undefined || creature.slot_number === null) {
+                creature.slot_number = 1; // Default to slot 1
+            } else if (typeof creature.slot_number !== 'number') {
+                creature.slot_number = parseInt(creature.slot_number) || 1;
+            }
+        });
+    }
+    next();
+});
 
 module.exports = mongoose.model('User', userSchema);

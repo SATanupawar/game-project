@@ -78,6 +78,12 @@ app.use('/api/quests', questRoutes); // Quest routes
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/creatures', creatureRoutes);
+
+// Initialize creature slots during startup
+const CreatureSlot = require('./models/creatureSlot');
+CreatureSlot.initializeSlots()
+  .then(() => console.log('Creature slots initialized'))
+  .catch(err => console.error('Error initializing creature slots:', err));
 app.use('/api/card-packs', cardPackRoutes);
 app.use('/api/building-decorations', buildingDecorationRoutes);
 app.use('/api/chests', chestRoutes);
@@ -92,7 +98,7 @@ app.post('/api/user/:userId/creature/purchase', async (req, res) => {
   try {
     console.log('Direct creature purchase route hit', req.params, req.body);
     const { userId } = req.params;
-    const { creatureType } = req.body;
+    const { creatureType, slotNumber } = req.body;
     
     if (!userId || !creatureType) {
       return res.status(400).json({
@@ -101,102 +107,16 @@ app.post('/api/user/:userId/creature/purchase', async (req, res) => {
       });
     }
     
-    // Find user
-    const User = require('./models/user');
-    const Creature = require('./models/creature');
+    // Use default slot 1 if not specified, ensure it's a number
+    const slot = slotNumber ? parseInt(slotNumber) : 1;
+    console.log(`Using slot number: ${slot} (type: ${typeof slot})`);
     
-    // Find the user
-    const user = await User.findOne({ userId });
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+    // Use the userService function to purchase creature
+    const userService = require('./service/userService');
+    const result = await userService.purchaseCreature(userId, creatureType, slot);
     
-    // Find the creature template
-    const creatureTemplate = await Creature.findOne({ creature_Id: creatureType });
-    if (!creatureTemplate) {
-      return res.status(400).json({
-        success: false,
-        message: `Creature type ${creatureType} not found`
-      });
-    }
-    
-    // Initialize user currency if it doesn't exist
-    if (!user.currency) {
-      user.currency = { anima: 0 };
-    }
-    
-    // Check if user has enough anima
-    const animaCost = creatureTemplate.anima_cost || 0;
-    if (!user.currency.anima || user.currency.anima < animaCost) {
-      return res.status(400).json({
-        success: false,
-        message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
-      });
-    }
-    
-    // Initialize creating_creatures array if it doesn't exist
-    if (!user.creating_creatures) {
-      user.creating_creatures = [];
-    }
-    
-    // Set current time and calculate finished time (this is required by schema)
-    // Even though we're not starting the unlock yet
-    const currentTime = new Date();
-    const unlockTimeMinutes = creatureTemplate.unlock_time || 10;
-    const finishedTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
-    
-    // Create creature purchase entry
-    const creaturePurchase = {
-      _id: new mongoose.Types.ObjectId(),
-      creature_id: creatureTemplate._id,
-      creature_type: creatureTemplate.creature_Id,
-      name: creatureTemplate.name,
-      started_time: currentTime, // Required by schema
-      finished_time: finishedTime, // Required by schema
-      unlock_time: unlockTimeMinutes,
-      level: 1,
-      base_attack: creatureTemplate.base_attack,
-      base_health: creatureTemplate.base_health,
-      gold_coins: creatureTemplate.gold_coins,
-      image: creatureTemplate.image || 'default.png',
-      description: creatureTemplate.description || '',
-      anima_cost: animaCost
-    };
-    
-    // Add to creating creatures array
-    user.creating_creatures.push(creaturePurchase);
-    
-    // Subtract anima from user currency
-    user.currency.anima -= animaCost;
-    user.markModified('currency');
-    user.markModified('creating_creatures');
-    
-    // Save user
-    await user.save();
-    
-    return res.status(200).json({
-      success: true,
-      message: `Creature ${creatureTemplate.name} purchased successfully with anima`,
-      data: {
-        creature: {
-          _id: creaturePurchase._id,
-          name: creatureTemplate.name,
-          type: creatureTemplate.type || 'common',
-          unlock_time: unlockTimeMinutes,
-          anima_cost: animaCost,
-          started_time: currentTime,
-          finished_time: finishedTime
-        },
-        user: {
-          userId: user.userId,
-          anima_balance: user.currency.anima,
-          creating_creatures_count: user.creating_creatures.length
-        }
-      }
-    });
+    // Return the result
+    return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('Error in direct creature purchase route:', error);
     return res.status(500).json({
@@ -625,4 +545,19 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
-}); 
+});
+
+// MongoDB Connection
+mongoose.set('strictQuery', false);
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    
+    // Initialize creature slots
+    const CreatureSlot = require('./models/creatureSlot');
+    CreatureSlot.initializeSlots()
+      .then(() => console.log('Creature slots initialized'))
+      .catch(err => console.error('Error initializing creature slots:', err));
+  })
+  .catch((err) => console.log(err)); 

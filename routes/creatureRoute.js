@@ -11,6 +11,7 @@ const {
 } = require('../service/creatureService');
 const Creature = require('../models/creature');
 const User = require('../models/user');
+const CreatureSlot = require('../models/creatureSlot');
 
 // Get all creatures
 router.get('/', async (req, res) => {
@@ -20,6 +21,242 @@ router.get('/', async (req, res) => {
             success: true,
             message: 'Creatures fetched successfully',
             data: creatures
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get all creature slots
+router.get('/slots', async (req, res) => {
+    try {
+        const slots = await CreatureSlot.find().sort({ slot_number: 1 });
+        res.status(200).json({
+            success: true,
+            message: 'Creature slots fetched successfully',
+            data: slots
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Get user's available creature slots
+router.get('/user/:userId/slots', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Get all slots
+        const allSlots = await CreatureSlot.find().sort({ slot_number: 1 });
+        
+        // Check if user has creature_slots field, initialize if not
+        if (!user.creature_slots || !Array.isArray(user.creature_slots)) {
+            user.creature_slots = [
+                { slot_number: 1, is_unlocked: true, unlocked_at: new Date() }
+            ];
+            await user.save();
+        }
+        
+        // Map user unlocked slots
+        const userUnlockedSlots = user.creature_slots.reduce((map, slot) => {
+            map[slot.slot_number] = slot.is_unlocked;
+            return map;
+        }, {});
+        
+        // Check if user is an elite user
+        const isEliteUser = user.elite_pass && user.elite_pass.active;
+        
+        // Format slots with availability information
+        const slotsWithAvailability = allSlots.map(slot => {
+            const isUnlocked = userUnlockedSlots[slot.slot_number] || false;
+            const isAvailable = slot.is_elite ? (isEliteUser && !isUnlocked) : !isUnlocked;
+            
+            // Get creatures currently in this slot
+            const creaturesInSlot = [
+                ...user.creatures.filter(c => c.slot_number === slot.slot_number),
+                ...user.creating_creatures.filter(c => c.slot_number === slot.slot_number)
+            ];
+            
+            return {
+                slot_number: slot.slot_number,
+                is_elite: slot.is_elite,
+                gold_cost: slot.gold_cost,
+                description: slot.description,
+                is_unlocked: isUnlocked,
+                is_available: isAvailable,
+                creatures_count: creaturesInSlot.length
+            };
+        });
+        
+        res.status(200).json({
+            success: true,
+            message: 'User slots fetched successfully',
+            data: {
+                slots: slotsWithAvailability,
+                is_elite_user: isEliteUser
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Unlock a slot for user
+router.post('/user/:userId/slots/:slotNumber/unlock', async (req, res) => {
+    try {
+        const { userId, slotNumber } = req.params;
+        const slotNum = parseInt(slotNumber);
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Find the slot
+        const slot = await CreatureSlot.findOne({ slot_number: slotNum });
+        if (!slot) {
+            return res.status(404).json({
+                success: false,
+                message: `Slot ${slotNum} not found`
+            });
+        }
+        
+        // Check if the slot is already unlocked
+        if (!user.creature_slots) {
+            user.creature_slots = [
+                { slot_number: 1, is_unlocked: true, unlocked_at: new Date() }
+            ];
+        }
+        
+        const existingSlot = user.creature_slots.find(s => s.slot_number === slotNum);
+        if (existingSlot && existingSlot.is_unlocked) {
+            return res.status(400).json({
+                success: false,
+                message: `Slot ${slotNum} is already unlocked`
+            });
+        }
+        
+        // Check if it's an elite slot
+        if (slot.is_elite) {
+            // Check if user is an elite user
+            const isEliteUser = user.elite_pass && user.elite_pass.active;
+            if (!isEliteUser) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This slot is only available for elite users'
+                });
+            }
+        } else {
+            // For non-elite slots, check gold cost
+            if (user.gold_coins < slot.gold_cost) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Not enough gold. Required: ${slot.gold_cost}, Available: ${user.gold_coins}`
+                });
+            }
+            
+            // Deduct gold
+            user.gold_coins -= slot.gold_cost;
+        }
+        
+        // Unlock the slot
+        if (existingSlot) {
+            existingSlot.is_unlocked = true;
+            existingSlot.unlocked_at = new Date();
+        } else {
+            user.creature_slots.push({
+                slot_number: slotNum,
+                is_unlocked: true,
+                unlocked_at: new Date()
+            });
+        }
+        
+        user.markModified('creature_slots');
+        await user.save();
+        
+        res.status(200).json({
+            success: true,
+            message: `Slot ${slotNum} unlocked successfully`,
+            data: {
+                slot_number: slotNum,
+                gold_remaining: user.gold_coins
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// Assign slot to a creature in creation
+router.put('/user/:userId/creature/:creatureId/assign-slot/:slotNumber', async (req, res) => {
+    try {
+        const { userId, creatureId, slotNumber } = req.params;
+        const slotNum = parseInt(slotNumber);
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Check if the slot is unlocked
+        const unlockedSlot = user.creature_slots?.find(s => s.slot_number === slotNum && s.is_unlocked);
+        if (!unlockedSlot) {
+            return res.status(400).json({
+                success: false,
+                message: `Slot ${slotNum} is not unlocked`
+            });
+        }
+        
+        // Find the creature
+        const creatureIndex = user.creating_creatures.findIndex(c => c._id.toString() === creatureId);
+        if (creatureIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: 'Creature not found in creation queue'
+            });
+        }
+        
+        // Update the slot
+        user.creating_creatures[creatureIndex].slot_number = slotNum;
+        user.markModified('creating_creatures');
+        await user.save();
+        
+        res.status(200).json({
+            success: true,
+            message: `Creature assigned to slot ${slotNum} successfully`,
+            data: {
+                creature_id: creatureId,
+                slot_number: slotNum
+            }
         });
     } catch (error) {
         res.status(500).json({ 
