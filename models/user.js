@@ -177,6 +177,36 @@ const completedQuestSchema = new mongoose.Schema({
 }, { _id: false });
 
 // Define schema for user creature slots
+// Define schema for creature inventory items
+const creatureInventoryItemSchema = new mongoose.Schema({
+    creature_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Creature',
+        required: true
+    },
+    creature_type: {
+        type: String,
+        required: true
+    },
+    name: {
+        type: String,
+        required: true
+    },
+    count: {
+        type: Number,
+        default: 1,
+        min: 0
+    },
+    rarity: {
+        type: String,
+        default: 'common'
+    },
+    image: {
+        type: String,
+        default: null
+    }
+}, { _id: false });
+
 const userCreatureSlotsSchema = new mongoose.Schema({
     slot_number: {
         type: Number,
@@ -235,6 +265,8 @@ const userSchema = new mongoose.Schema({
         required: true,
         max: 100000000
     },
+    // Creature inventory - stores creatures obtained from card packs and other sources
+    creature_inventory: [creatureInventoryItemSchema],
     // Creature slots that the user has unlocked
     creature_slots: [userCreatureSlotsSchema],
     buildings: [{
@@ -336,7 +368,11 @@ const userSchema = new mongoose.Schema({
         },
         finished_time: {
             type: Date,
-            required: true
+            required: false, // Not required initially, will be set when unlock starts
+            default: function() {
+                // Set a far future date by default (1 year from now)
+                return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            }
         },
         unlock_time: {
             type: Number,
@@ -350,13 +386,13 @@ const userSchema = new mongoose.Schema({
             type: Number,
             required: true
         },
-        // Add slot information to creatures being created with default value 1
+        // Add slot information to creatures being created
         slot_number: {
             type: Number,
             min: 1,
             max: 5,
-            required: true,
-            default: 1 // Add default value to avoid validation errors
+            required: false, // Make slot_number optional for card pack creatures
+            default: null // Allow null for creatures from card packs
         }
     }],
     battle_selected_creatures: [battleCreatureSchema],
@@ -627,17 +663,7 @@ userSchema.methods.getXPProgress = async function() {
 
 // Add pre-save hook to fix any issues with slot_number in creating_creatures
 userSchema.pre('save', function(next) {
-    // Fix slot_number in creating_creatures if it exists
-    if (this.creating_creatures && Array.isArray(this.creating_creatures)) {
-        this.creating_creatures.forEach(creature => {
-            // Ensure slot_number is set as a Number
-            if (creature.slot_number === undefined || creature.slot_number === null) {
-                creature.slot_number = 1; // Default to slot 1
-            } else if (typeof creature.slot_number !== 'number') {
-                creature.slot_number = parseInt(creature.slot_number) || 1;
-            }
-        });
-    }
+    // Remove this pre-save hook - we don't want to force values for card pack creatures
     next();
 });
 

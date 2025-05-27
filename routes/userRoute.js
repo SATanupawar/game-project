@@ -20,7 +20,8 @@ const {
     updateBattleSelectedCreatures,
     mergeCreatures,
     addBoostToUser,
-    removeBoostFromUser
+    removeBoostFromUser,
+    getCreatureInventory
 } = require('../service/userService');
 const mongoose = require('mongoose');
 const User = require('../models/user');
@@ -574,11 +575,8 @@ router.put('/:userId/buildings/:buildingId/creatures/:creatureId/level/:levelNum
         console.log(`Updating creature ${creatureId} to level ${parsedLevel} in building ${effectiveBuildingId} for user ${userId}`);
         const result = await updateBuildingCreatureLevel(userId, effectiveBuildingId, creatureId, parsedLevel);
         
-        res.status(200).json({
-            success: true,
-            message: 'Creature level updated successfully',
-            data: result
-        });
+        // The result from updateBuildingCreatureLevel already has the success, message structure
+        res.status(200).json(result);
     } catch (error) {
         console.error(`Error updating creature level:`, error);
         if (error.message.includes('not found')) {

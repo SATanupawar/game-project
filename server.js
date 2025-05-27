@@ -126,6 +126,34 @@ app.post('/api/user/:userId/creature/purchase', async (req, res) => {
   }
 });
 
+// Direct route for getting a user's creature inventory
+app.get('/api/user/:userId/creature-inventory', async (req, res) => {
+  try {
+    console.log('Direct creature inventory route hit', req.params);
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: userId'
+      });
+    }
+
+    // Use the userService function to get creature inventory
+    const userService = require('./service/userService');
+    const result = await userService.getCreatureInventory(userId);
+    
+    // Return the result
+    return res.status(result.success ? 200 : 404).json(result);
+  } catch (error) {
+    console.error('Error in direct creature inventory route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error getting creature inventory: ${error.message}`
+    });
+  }
+});
+
 // Keep old route for backward compatibility
 app.post('/api/direct-creature-purchase', async (req, res) => {
   try {

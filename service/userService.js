@@ -34,6 +34,9 @@ async function getUserWithDetails(userIdParam) {
             if (template.creature_Id) {
                 templateByTypeMap[template.creature_Id] = template;
             }
+            if (template.creature_type) {
+                templateByTypeMap[template.creature_type] = template;
+            }
         });
 
         // Process each creature to add full data
@@ -51,6 +54,12 @@ async function getUserWithDetails(userIdParam) {
             // If not found, try by creature_type
             if (!template && userCreature.creature_type) {
                 template = templateByTypeMap[userCreature.creature_type];
+                
+                // If still not found by creature_type, try direct lookup
+                if (!template) {
+                    console.log(`Looking up creature by creature_type: ${userCreature.creature_type}`);
+                    template = creatureTemplates.find(t => t.creature_type === userCreature.creature_type);
+                }
             }
             
             // If still not found, get the first template matching the creature name
@@ -81,7 +90,7 @@ async function getUserWithDetails(userIdParam) {
             const enhancedCreature = {
                 _id: userCreature._id,
                 creature_id: userCreature.creature_id || template._id,
-                creature_type: userCreature.creature_type || template.creature_Id,
+                creature_type: userCreature.creature_type || template.creature_type || 'Draconic',
                 name: template.name,
                 type: template.type,
                 level: level,
@@ -256,10 +265,10 @@ async function updateReserveCoins(userId, buildingIndex, boost = 0) {
                     creature = await Creature.findById(creatureData.creature_id);
                 }
                 
-                // If ID lookup failed, try by creature_type (which should match creature_Id)
+                // If ID lookup failed, try by creature_type
                 if (!creature && creatureData.creature_type) {
                     console.log(`Looking up creature by creature_type: ${creatureData.creature_type}`);
-                    creature = await Creature.findOne({ creature_Id: creatureData.creature_type });
+                    creature = await Creature.findOne({ creature_type: creatureData.creature_type });
                 }
                 
                 // If still not found, try by name
@@ -1302,7 +1311,8 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
                 base_health: creatureData.base_health || (creatureTemplate?.base_health) || 250,
                 gold_coins: creatureData.gold_coins || (creatureTemplate?.gold_coins) || 50,
                 image: creatureData.image || (creatureTemplate?.image) || 'dragon.png',
-                description: creatureData.description || (creatureTemplate?.description) || 'A fierce fire-breathing dragon'
+                description: creatureData.description || (creatureTemplate?.description) || 'A fierce fire-breathing dragon',
+                creature_type: creatureTemplate?.creature_type || 'Draconic' // Set proper creature type category
             });
 
             // Save the new creature
@@ -1442,6 +1452,15 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             if (!user) {
                 throw new Error('User not found');
             }
+        }
+        
+        // Initialize user currency if it doesn't exist
+        if (!user.currency) {
+            user.currency = { 
+                anima: 0,
+                arcane_energy: 0,
+                gems: 0
+            };
         }
         
         console.log(`Found user: ${user.userId}`);
@@ -1604,6 +1623,46 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             throw new Error(`Cannot update to level ${parsedLevel}. This level can only be achieved by merging two creatures of the previous milestone level.`);
         }
         
+        // Check if attempting to upgrade more than one level at a time or downgrade
+        if (parsedLevel > previousLevel + 1) {
+            throw new Error(`Cannot skip levels. You can only upgrade from level ${previousLevel} to level ${previousLevel + 1}.`);
+        }
+        
+        // Prevent downgrading - ensure new level is higher than previous level
+        if (parsedLevel < previousLevel) {
+            throw new Error(`Cannot downgrade creature level from ${previousLevel} to ${parsedLevel}.`);
+        }
+        
+        // Only check arcane energy cost if upgrading to a higher level (not initializing or downgrading)
+        if (parsedLevel > previousLevel) {
+            // Get required arcane energy for this upgrade
+            let requiredArcaneEnergy = 0;
+            
+            // Check if level_stats contains arcane_energy for the current level
+            if (creatureTemplate.level_stats && 
+                Array.isArray(creatureTemplate.level_stats) && 
+                creatureTemplate.level_stats[previousLevel - 1] && 
+                creatureTemplate.level_stats[previousLevel - 1].arcane_energy) {
+                
+                requiredArcaneEnergy = creatureTemplate.level_stats[previousLevel - 1].arcane_energy;
+                console.log(`Required arcane energy for upgrading to level ${parsedLevel}: ${requiredArcaneEnergy}`);
+            } else {
+                // Fallback if level_stats not available - use a basic formula
+                requiredArcaneEnergy = (previousLevel * 100) + 50;
+                console.log(`Using fallback arcane energy cost: ${requiredArcaneEnergy}`);
+            }
+            
+            // Check if user has enough arcane energy
+            if (!user.currency.arcane_energy || user.currency.arcane_energy < requiredArcaneEnergy) {
+                throw new Error(`Not enough arcane energy to upgrade. Required: ${requiredArcaneEnergy}, Available: ${user.currency.arcane_energy || 0}`);
+            }
+            
+            // Deduct arcane energy for the upgrade
+            user.currency.arcane_energy -= requiredArcaneEnergy;
+            user.markModified('currency');
+            console.log(`Deducted ${requiredArcaneEnergy} arcane energy. Remaining: ${user.currency.arcane_energy}`);
+        }
+        
         // Update the creature's level
         creatureEntry.level = parsedLevel;
         
@@ -1655,43 +1714,45 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         creatureEntry.attack = attack;
         creatureEntry.health = health;
         
-        // Calculate and update gold coins and arcane energy based on type and level
-        let baseGold = creatureTemplate.gold_coins;
-        let baseArcaneEnergy = creatureTemplate.arcane_energy;
+        // Get gold and arcane energy directly from level_stats array
+        let goldCoins = creatureTemplate.gold_coins || 0;
+        let arcaneEnergy = creatureTemplate.arcane_energy || 0;
         
-        // If not explicitly set in template, use defaults based on creature type
-        if (!baseArcaneEnergy) {
-            switch(creatureType.toLowerCase()) {
-                case 'common':
-                    baseArcaneEnergy = 99;
-                    if (!baseGold) baseGold = 77;
-                    break;
-                case 'rare':
-                    baseArcaneEnergy = 212;
-                    if (!baseGold) baseGold = 125;
-                    break;
-                case 'epic':
-                    baseArcaneEnergy = 403;
-                    if (!baseGold) baseGold = 415;
-                    break;
-                case 'legendary':
-                    baseArcaneEnergy = 612;
-                    if (!baseGold) baseGold = 1001;
-                    break;
-                case 'elite':
-                    baseArcaneEnergy = 843;
-                    if (!baseGold) baseGold = 1503;
-                    break;
-                default:
-                    baseArcaneEnergy = 99;
-                    if (!baseGold) baseGold = 77;
+        // Check for level stats in creature template
+        if (creatureTemplate.level_stats && Array.isArray(creatureTemplate.level_stats)) {
+            // Find stats for the specific level
+            // Level stats array is 0-indexed (level 1 is at index 0)
+            const levelStats = creatureTemplate.level_stats[parsedLevel - 1];
+            
+            if (levelStats) {
+                console.log(`Found level stats for level ${parsedLevel}:`, levelStats);
+                
+                // Use attack and health from level_stats if available
+                if (levelStats.attack) {
+                    attack = levelStats.attack;
+                    creatureEntry.attack = attack;
+                }
+                
+                if (levelStats.health) {
+                    health = levelStats.health;
+                    creatureEntry.health = health;
+                }
+                
+                // Use gold from level_stats
+                if (levelStats.gold) {
+                    goldCoins = levelStats.gold;
+                }
+                
+                // Use arcane_energy from level_stats
+                if (levelStats.arcane_energy) {
+                    arcaneEnergy = levelStats.arcane_energy;
+                }
+            } else {
+                console.log(`No level stats found for level ${parsedLevel}`);
             }
+        } else {
+            console.log(`No level_stats array found in creature template for ${creatureTemplate.name}`);
         }
-        
-        // Calculate gold and arcane energy with level multiplier (doubles each level)
-        const levelMultiplier = Math.pow(2, parsedLevel - 1);
-        const goldCoins = baseGold * levelMultiplier;
-        const arcaneEnergy = baseArcaneEnergy * levelMultiplier;
         
         // Save gold and arcane energy values
         creatureEntry.gold_coins = goldCoins;
@@ -1703,27 +1764,34 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         console.log(`Updated creature ${creatureEntry.name || creatureEntry.creature_type} from level ${previousLevel} to ${parsedLevel}`);
         console.log(`New stats: Attack ${attack}, Health ${health}, Gold ${goldCoins}, Arcane Energy ${arcaneEnergy}`);
 
+        // Removed next level cost calculation as requested
+
         return {
-            user: {
-                userId: user.userId,
-                user_name: user.user_name
-            },
-            building: {
-                buildingId: building.buildingId,
-                name: building.name,
-                index: buildingIndex
-            },
-            creature: {
-                creature_id: creatureEntry._id || creatureEntry.creature_id,
-                creature_type: creatureEntry.creature_type,
-                name: creatureEntry.name || creatureTemplate.name,
-                previousLevel: previousLevel,
-                newLevel: parsedLevel,
-                attack: attack,
-                health: health,
-                gold: goldCoins,
-                arcane_energy: arcaneEnergy,
-                count: creatureEntry.count || 1
+            success: true,
+            message: "Creature level updated successfully",
+            data: {
+                user: {
+                    userId: user.userId,
+                    user_name: user.user_name,
+                    arcane_energy: user.currency.arcane_energy || 0
+                },
+                building: {
+                    buildingId: building.buildingId,
+                    name: building.name,
+                    index: buildingIndex
+                },
+                creature: {
+                    creature_id: creatureEntry._id || creatureEntry.creature_id,
+                    creature_type: creatureEntry.creature_type,
+                    name: creatureEntry.name || creatureTemplate.name,
+                    previousLevel: previousLevel,
+                    newLevel: parsedLevel,
+                    attack: attack,
+                    health: health,
+                    gold: goldCoins,
+                    arcane_energy: arcaneEnergy,
+                    count: creatureEntry.count || 1
+                }
             }
         };
     } catch (error) {
@@ -1820,7 +1888,7 @@ async function getBuildingCreatures(userIdParam, buildingIndex) {
                 const completeCreature = {
                     _id: creatureId.toString(),
                     creature_id: creatureId.toString(),
-                    creature_type: userCreature?.creature_type || template?.creature_Id || 'dragon',
+                    creature_type: userCreature?.creature_type || template?.creature_type || 'Draconic',
                     name: userCreature?.name || template?.name || 'Dragon',
                     type: userCreature?.type || template?.type || 'common',
                     level: userCreature?.level || 1,
@@ -1926,6 +1994,9 @@ async function getUserBuildings(userIdParam) {
             if (template.creature_Id) {
                 templateByTypeMap[template.creature_Id] = template;
             }
+            if (template.creature_type) {
+                templateByTypeMap[template.creature_type] = template;
+            }
         });
 
         // Process buildings with enhanced creatures
@@ -1952,6 +2023,12 @@ async function getUserBuildings(userIdParam) {
                 // If not found, try by creature_type
                 if (!template && userCreature.creature_type) {
                     template = templateByTypeMap[userCreature.creature_type];
+                    
+                    // If still not found by creature_type, try direct lookup
+                    if (!template) {
+                        console.log(`Looking up creature by creature_type: ${userCreature.creature_type}`);
+                        template = creatureTemplates.find(t => t.creature_type === userCreature.creature_type);
+                    }
                 }
                 
                 // If still not found, get the first template matching the creature name
@@ -1982,7 +2059,7 @@ async function getUserBuildings(userIdParam) {
                 const enhancedCreature = {
                     _id: userCreature._id,
                     creature_id: userCreature.creature_id || template._id,
-                    creature_type: userCreature.creature_type || template.creature_Id,
+                    creature_type: userCreature.creature_type || template.creature_type || 'Draconic',
                     name: template.name,
                     type: template.type,
                     level: level,
@@ -3751,10 +3828,10 @@ async function getDebugBuildingInfo(userIdParam, buildingIdentifier) {
     }
 }
 
-// Purchase a creature using anima currency
+// Purchase a creature using anima currency or from inventory
 async function purchaseCreature(userId, creatureType, slotNumber = 1) {
     try {
-        console.log(`Purchasing creature ${creatureType} for user ${userId} with anima in slot ${slotNumber}`);
+        console.log(`Attempting to purchase creature ${creatureType} for user ${userId} in slot ${slotNumber}`);
         
         // Find the user
         const user = await User.findOne({ userId });
@@ -3774,18 +3851,42 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             };
         }
         
-        // Initialize user currency if it doesn't exist
-        if (!user.currency) {
-            user.currency = { anima: 0 };
+        // Initialize creature_inventory if it doesn't exist
+        if (!user.creature_inventory) {
+            user.creature_inventory = [];
         }
         
-        // Check if user has enough anima
+        // Define animaCost early so it's available for all code paths
         const animaCost = creatureTemplate.anima_cost || 0;
-        if (!user.currency.anima || user.currency.anima < animaCost) {
-            return {
-                success: false,
-                message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
-            };
+        console.log(`Creature ${creatureTemplate.name} anima cost: ${animaCost}`);
+        
+        // Try to find this creature in the user's inventory first
+        const inventoryCreature = user.creature_inventory.find(c => 
+            c.creature_type === creatureType || 
+            (c.creature_id && creatureTemplate._id && c.creature_id.toString() === creatureTemplate._id.toString()) ||
+            c.name.toLowerCase() === creatureTemplate.name.toLowerCase()
+        );
+        
+        // Check if the creature exists in inventory and has count > 0
+        const fromInventory = inventoryCreature && inventoryCreature.count > 0;
+        
+        if (fromInventory) {
+            console.log(`Found creature ${creatureTemplate.name} in inventory with count ${inventoryCreature.count}`);
+        } else {
+            console.log(`Creature ${creatureTemplate.name} not found in inventory, will purchase with anima`);
+            
+            // Initialize user currency if it doesn't exist
+            if (!user.currency) {
+                user.currency = { anima: 0 };
+            }
+            
+            // Check if user has enough anima
+            if (!user.currency.anima || user.currency.anima < animaCost) {
+                return {
+                    success: false,
+                    message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
+                };
+            }
         }
         
         // Check user level requirement
@@ -3893,21 +3994,25 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
         // Store the unlockTimeMinutes, but don't start the timer yet
         const unlockTimeMinutes = creatureTemplate.unlock_time || 10;
         
-        // Calculate default times (even though unlock hasn't started)
+        // Get current time for creation timestamp only
         const currentTime = new Date();
-        const futureTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
+        
+        // Set placeholder dates 1 year in the future for started_time and finished_time
+        // These will be properly set when startCreatureUnlock is called
+        const placeholderFutureDate = new Date(currentTime.getTime() + 365 * 24 * 60 * 60 * 1000);
         
         // Create a properly structured object directly without using a temporary model
         // This avoids the "Cannot overwrite model" error
         const creatureDoc = {
             _id: new mongoose.Types.ObjectId(),
             creature_id: creatureTemplate._id,
-            creature_type: creatureTemplate.creature_Id,
+            creature_type: creatureTemplate.creature_type, // Use the correct category type (Draconic/Beast/Fractal)
+            creature_Id_reference: creatureTemplate.creature_Id, // Store the reference to creature_Id
             name: creatureTemplate.name,
             unlock_time: unlockTimeMinutes,
             unlock_started: false,
-            started_time: currentTime,
-            finished_time: futureTime,
+            started_time: placeholderFutureDate, // Placeholder until unlock is started
+            finished_time: placeholderFutureDate, // Placeholder until unlock is started
             level: 1,
             base_attack: creatureTemplate.base_attack,
             base_health: creatureTemplate.base_health,
@@ -3915,7 +4020,12 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             image: creatureTemplate.image || 'default.png',
             description: creatureTemplate.description || '',
             anima_cost: animaCost,
-            slot_number: parseInt(slotNumber) || 1
+            slot_number: parseInt(slotNumber) || 1,
+            // Add additional stats
+            critical_damage: creatureTemplate.critical_damage || 100,
+            critical_damage_percentage: creatureTemplate.critical_damage_percentage || 25,
+            armor: creatureTemplate.armor || 0,
+            speed: creatureTemplate.speed || 100
         };
         
         console.log("Created creature purchase with slot number:", creatureDoc.slot_number, "Type:", typeof creatureDoc.slot_number);
@@ -3926,16 +4036,41 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
         }
         user.creating_creatures.push(creatureDoc);
         
-        // Subtract anima from user currency
-        user.currency.anima -= animaCost;
-        user.markModified('currency');
+        // If from inventory, decrement count, otherwise subtract anima
+        if (fromInventory) {
+            // Decrease the count in inventory
+            inventoryCreature.count--;
+            
+            // If count is 0, remove from inventory
+            if (inventoryCreature.count <= 0) {
+                const inventoryIndex = user.creature_inventory.findIndex(c => c === inventoryCreature);
+                if (inventoryIndex !== -1) {
+                    user.creature_inventory.splice(inventoryIndex, 1);
+                }
+            }
+            
+            console.log(`Using creature from inventory. Decreased count to ${inventoryCreature.count}`);
+            user.markModified('creature_inventory');
+        } else {
+            // Subtract anima from user currency for normal purchase
+            console.log(`Purchasing with anima. Cost: ${animaCost}, Current anima: ${user.currency.anima}`);
+            user.currency.anima -= animaCost;
+            user.markModified('currency');
+        }
+        
         user.markModified('creating_creatures');
         
         // Save user
         await user.save();
         
-        // Prepare a message based on whether gold was spent for the slot
-        let purchaseMessage = `Creature ${creatureTemplate.name} purchased successfully with anima`;
+        // Prepare a message based on source and slot status
+        let purchaseMessage = '';
+        if (fromInventory) {
+            purchaseMessage = `Creature ${creatureTemplate.name} taken from inventory`;
+        } else {
+            purchaseMessage = `Creature ${creatureTemplate.name} purchased with anima`;
+        }
+        
         if (slotConfig && slotConfig.gold_cost > 0) {
             purchaseMessage += ` and placed in slot ${slotNumber} (cost: ${slotConfig.gold_cost} gold)`;
         } else {
@@ -3950,21 +4085,32 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
                     _id: creatureDoc._id,
                     name: creatureTemplate.name,
                     type: creatureTemplate.type || 'common',
-                    unlock_time: unlockTimeMinutes,
-                    anima_cost: animaCost,
-                    unlock_started: false,
-                    slot_number: parseInt(slotNumber)
+                    base_attack: creatureDoc.base_attack,
+                    base_health: creatureDoc.base_health,
+                    gold_coins: creatureDoc.gold_coins,
+                    arcane_energy: creatureDoc.arcane_energy,
+                    critical_damage: creatureDoc.critical_damage,
+                    critical_damage_percentage: creatureDoc.critical_damage_percentage,
+                    armor: creatureDoc.armor,
+                    speed: creatureDoc.speed
+                    // Removed: unlock_time, anima_cost, unlock_started, slot_number
                 },
                 slot_info: {
                     slot_number: parseInt(slotNumber),
                     is_elite: slotConfig ? slotConfig.is_elite : false,
                     gold_cost: slotConfig ? slotConfig.gold_cost : 0
                 },
+                source: fromInventory ? 'inventory' : 'purchase',
+                inventory_info: fromInventory ? {
+                    previous_count: inventoryCreature.count + 1,
+                    remaining_count: inventoryCreature.count
+                } : null,
                 user: {
                     userId: user.userId,
                     anima_balance: user.currency.anima,
                     gold_coins: user.gold_coins,
-                    creating_creatures_count: user.creating_creatures.length
+                    creating_creatures_count: user.creating_creatures.length,
+                    inventory_count: user.creature_inventory.length
                 }
             }
         };
@@ -4006,32 +4152,60 @@ async function checkCreatureUnlockStatus(userId) {
         const creaturesInProgress = [];
         const creaturesReadyToUnlock = [];
         
+        // Track if we need to save fixes to database inconsistencies
+        let needsToSaveFixedData = false;
+        
         // Check each creature's status
         user.creating_creatures.forEach(creature => {
-            const finishedTime = new Date(creature.finished_time);
-            const isReady = finishedTime <= currentTime;
+            // Check for database inconsistency: valid timestamp but unlock_started is false
+            const hasValidTimestamps = creature.started_time && 
+                                       creature.finished_time && 
+                                       new Date(creature.started_time).getFullYear() < 2100; // Not a far-future placeholder
             
-            // Calculate remaining time in minutes
-            const remainingTimeMs = Math.max(0, finishedTime - currentTime);
-            const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+            // Fix database inconsistency on-the-fly if needed
+            if (hasValidTimestamps && creature.unlock_started !== true) {
+                console.log(`Fixing inconsistent data: Creature ${creature.name} has valid timestamps but unlock_started is false`);
+                creature.unlock_started = true;
+                // We'll need to save this fix later
+                needsToSaveFixedData = true;
+            }
+            
+            // Consider unlocked either by flag or by having valid timestamps
+            const unlockStarted = creature.unlock_started === true || hasValidTimestamps;
+            const finishedTime = new Date(creature.finished_time);
+            
+            // A creature is ready if unlock has started AND finished time has passed
+            const isReady = unlockStarted && finishedTime <= currentTime;
+            
+            // Calculate remaining time in minutes - only if unlock has started
+            let remainingMinutes = 0;
+            if (unlockStarted) {
+                const remainingTimeMs = Math.max(0, finishedTime - currentTime);
+                remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+            } else {
+                // If unlock hasn't started, use the full unlock time
+                remainingMinutes = creature.unlock_time || 10;
+            }
             
             const creatureInfo = {
                 _id: creature._id,
                 name: creature.name,
                 type: creature.creature_type,
-                started_time: creature.started_time,
-                finished_time: finishedTime,
-                unlock_time: creature.unlock_time,
                 is_ready: isReady,
+                unlock_started: unlockStarted,
                 remaining_minutes: remainingMinutes,
                 level: creature.level,
-                anima_cost: creature.anima_cost,
                 base_attack: creature.base_attack,
                 base_health: creature.base_health,
                 gold_coins: creature.gold_coins,
                 image: creature.image,
                 description: creature.description,
-                slot_number: creature.slot_number || 1
+                // Add additional stats
+                critical_damage: creature.critical_damage || 100,
+                critical_damage_percentage: creature.critical_damage_percentage || 25,
+                armor: creature.armor || 0,
+                speed: creature.speed || 100
+                // Removing unwanted fields: started_time, finished_time, unlock_time, anima_cost, slot_number
             };
             
             if (isReady) {
@@ -4040,6 +4214,20 @@ async function checkCreatureUnlockStatus(userId) {
                 creaturesInProgress.push(creatureInfo);
             }
         });
+        
+        // If we fixed any inconsistencies, save them to the database
+        if (needsToSaveFixedData) {
+            console.log(`Saving fixes to database inconsistencies for user ${userId}`);
+            user.markModified('creating_creatures');
+            
+            try {
+                await user.save();
+                console.log(`Successfully saved fixed data`);
+            } catch (saveError) {
+                console.error(`Error saving fixed data: ${saveError}`);
+                // Continue anyway to return the corrected status to the client
+            }
+        }
         
         return {
             success: true,
@@ -4050,7 +4238,8 @@ async function checkCreatureUnlockStatus(userId) {
                     in_progress: creaturesInProgress
                 },
                 total_count: user.creating_creatures.length,
-                ready_count: creaturesReadyToUnlock.length
+                ready_count: creaturesReadyToUnlock.length,
+                fixed_data: needsToSaveFixedData // Indicate if we fixed any data
             }
         };
     } catch (error) {
@@ -4065,124 +4254,145 @@ async function checkCreatureUnlockStatus(userId) {
 // Unlock a creature when it's ready and add to user's creatures list
 async function unlockCreature(userId, creatureId, forceUnlock = false) {
     try {
-        console.log(`Unlocking creature ${creatureId} for user ${userId}`);
-        
-        // Find the user
+        // Find user
         const user = await User.findOne({ userId });
         if (!user) {
-                return {
-                    success: false,
+            return {
+                success: false,
                 message: 'User not found'
             };
         }
-        
-        // Check if creating_creatures exists
-        if (!user.creating_creatures || user.creating_creatures.length === 0) {
-                return {
-                    success: false,
-                message: 'No creatures in creation queue'
+
+        // Find the creature in locked_creatures or creating_creatures
+        let creatureToUnlock = null;
+        let creatureIndex = -1;
+        let isFromCreatingCreatures = false;
+
+        // First check in creating_creatures
+        if (user.creating_creatures && Array.isArray(user.creating_creatures)) {
+            creatureIndex = user.creating_creatures.findIndex(c => c._id.toString() === creatureId);
+            if (creatureIndex !== -1) {
+                creatureToUnlock = user.creating_creatures[creatureIndex];
+                isFromCreatingCreatures = true;
+            }
+        }
+
+        // If not found, check in locked_creatures
+        if (creatureToUnlock === null && user.locked_creatures && Array.isArray(user.locked_creatures)) {
+            creatureIndex = user.locked_creatures.findIndex(c => c._id.toString() === creatureId);
+            if (creatureIndex !== -1) {
+                creatureToUnlock = user.locked_creatures[creatureIndex];
+            }
+        }
+
+        if (!creatureToUnlock) {
+            return {
+                success: false,
+                message: 'Creature not found'
             };
         }
-        
-        // Find the specific creature
-        const creatureIndex = user.creating_creatures.findIndex(
-            c => c._id.toString() === creatureId
-        );
-        
-        if (creatureIndex === -1) {
-                return {
-                    success: false,
-                message: 'Creature not found in creation queue'
-            };
-        }
-        
-        const creature = user.creating_creatures[creatureIndex];
-        const finishedTime = new Date(creature.finished_time);
-        const currentTime = new Date();
-        
-        // Check if the creature is ready to unlock (skip if forceUnlock is true)
-        if (!forceUnlock && finishedTime > currentTime) {
-            const remainingTimeMs = finishedTime - currentTime;
-            const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+
+        // Check if creature is ready to unlock
+        if (!forceUnlock && isFromCreatingCreatures) {
+            // Check for database inconsistency: has valid timestamps but unlock_started is false
+            const hasValidTimestamps = creatureToUnlock.started_time && 
+                                     creatureToUnlock.finished_time && 
+                                     new Date(creatureToUnlock.started_time).getFullYear() < 2100;
             
+            // Fix inconsistency if needed
+            if (hasValidTimestamps && !creatureToUnlock.unlock_started) {
+                console.log(`Fixing inconsistent data in unlockCreature: Creature ${creatureToUnlock.name} has valid timestamps but unlock_started is false`);
+                creatureToUnlock.unlock_started = true;
+                user.markModified('creating_creatures');
+                await user.save();
+                console.log(`Fixed unlock_started flag for creature ${creatureToUnlock.name}`);
+            }
+            
+            // First check if unlock has been started at all (after potential fix)
+            if (!creatureToUnlock.unlock_started && !hasValidTimestamps) {
                 return {
                     success: false,
-                message: `Creature is not ready to unlock yet. ${remainingMinutes} minutes remaining.`,
-                data: {
-                    remaining_minutes: remainingMinutes,
-                    finished_time: finishedTime
-                }
-            };
-        }
-        
-        // Initialize creatures array if it doesn't exist
-        if (!user.creatures) {
-            user.creatures = [];
-        }
-        
-        // Create a new creature entry for the user
-        const newCreature = {
-            _id: new mongoose.Types.ObjectId(),
-            creature_id: creature.creature_id,
-            creature_type: creature.creature_type,
-            name: creature.name,
-            level: creature.level || 1,
-            building_index: 0,  // Default building index (not assigned to any specific building but satisfies validation)
-            base_attack: creature.base_attack,
-            base_health: creature.base_health,
-            attack: creature.base_attack,
-            health: creature.base_health,
-            gold_coins: creature.gold_coins || 0,
-            count: 1,
-            image: creature.image,
-            description: creature.description,
-            slot_number: creature.slot_number || 1 // Maintain the slot number from creation
-        };
-        
-        // Add the creature to the user's creatures array
-        user.creatures.push(newCreature);
-        
-        // Get the slot number before removing the creature
-        const slotNumber = creature.slot_number || 1;
-        
-        // Remove the creature from the creation queue
-        user.creating_creatures.splice(creatureIndex, 1);
-        
-        // Lock the slot again (except slot 1 which is always unlocked)
-        if (slotNumber > 1) {
-            // Find this slot in creature_slots array
-            const slotIndex = user.creature_slots.findIndex(slot => 
-                slot.slot_number === slotNumber && slot.is_unlocked
-            );
+                    message: 'Creature unlock timer has not been started yet. Use startCreatureUnlock API first.',
+                    unlock_started: false
+                };
+            }
             
-            if (slotIndex !== -1) {
-                // Lock the slot by removing it from the unlocked slots
-                user.creature_slots.splice(slotIndex, 1);
-                console.log(`Locked slot ${slotNumber} after creature unlock completed`);
+            // Then check if the unlock timer has finished
+            const now = new Date();
+            const finishTime = new Date(creatureToUnlock.finished_time);
+            
+            if (now < finishTime) {
+                // Timer started but not finished yet
+                return {
+                    success: false,
+                    message: 'Creature is not ready to unlock yet',
+                    unlock_started: true,
+                    remaining_time: Math.ceil((finishTime - now) / 1000), // in seconds
+                    remaining_minutes: Math.ceil((finishTime - now) / 60000) // in minutes
+                };
+            }
+        }
+
+        // Create a copy of the creature for the creatures array, preserving important stats but excluding unwanted fields
+        const { slot_number, unlock_started, unlock_time, anima_cost, started_time, finished_time, ...creatureWithoutSlot } = creatureToUnlock.toObject ? 
+            creatureToUnlock.toObject() : { ...creatureToUnlock };
+            
+        // Ensure critical stats are preserved (use defaults if not present)
+        if (!creatureWithoutSlot.critical_damage) creatureWithoutSlot.critical_damage = 100;
+        if (!creatureWithoutSlot.critical_damage_percentage) creatureWithoutSlot.critical_damage_percentage = 25;
+        if (!creatureWithoutSlot.armor) creatureWithoutSlot.armor = 0;
+        if (!creatureWithoutSlot.speed) creatureWithoutSlot.speed = 100;
+            
+        // All creatures start with building_index = 0 when unlocked
+        // This indicates they need to be assigned to a building by the player
+        creatureWithoutSlot.building_index = 0;
+        console.log(`Set building_index to 0 for unlocked creature ${creatureToUnlock.name} - player needs to assign it to a building`);
+        
+        // Log whether this came from a card pack (helpful for debugging)
+        if (slot_number === null || slot_number === undefined) {
+            console.log(`Unlocking creature ${creatureToUnlock.name} from card pack (no slot_number)`);
+        }
+        
+        // Fix creature_type to use the proper category (Draconic, Beast, Fractal)
+        if (creatureWithoutSlot.creature_type) {
+            // Look up the creature template to get the proper creature_type
+            const creatureTemplate = await Creature.findOne({ 
+                creature_Id: creatureWithoutSlot.creature_type 
+            });
+            
+            if (creatureTemplate && creatureTemplate.creature_type) {
+                // Replace with the correct category type
+                creatureWithoutSlot.creature_type = creatureTemplate.creature_type;
+                console.log(`Fixed creature_type from ${creatureToUnlock.creature_type} to ${creatureWithoutSlot.creature_type}`);
             }
         }
         
-        // Mark arrays as modified
-        user.markModified('creatures');
-        user.markModified('creating_creatures');
-        user.markModified('creature_slots');
-        
+        // Add the creature to user's creatures array
+        user.creatures.push(creatureWithoutSlot);
+
+        // Remove the creature from locked_creatures or creating_creatures
+        if (isFromCreatingCreatures) {
+            user.creating_creatures.splice(creatureIndex, 1);
+            user.markModified('creating_creatures');
+        } else {
+            user.locked_creatures.splice(creatureIndex, 1);
+            user.markModified('locked_creatures');
+        }
+
         // Save the user
+        user.markModified('creatures');
         await user.save();
-        
+
         return {
             success: true,
-            message: `Creature ${creature.name} unlocked successfully`,
-            data: {
-                creature: newCreature,
-                remaining_creatures_in_queue: user.creating_creatures.length
-            }
+            message: 'Creature unlocked successfully',
+            creature: creatureWithoutSlot
         };
     } catch (error) {
-        console.error('Error in unlockCreature:', error);
+        console.error('Error unlocking creature:', error);
         return {
             success: false,
-            message: `Error unlocking creature: ${error.message}`
+            message: 'Failed to unlock creature: ' + error.message
         };
     }
 }
@@ -4345,30 +4555,107 @@ async function startCreatureUnlock(userId, creatureId) {
         const unlockTimeMinutes = creature.unlock_time || 10;
         const finishedTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
         
-        // Update the creature with start and finish times
-        user.creating_creatures[creatureIndex].started_time = currentTime;
-        user.creating_creatures[creatureIndex].finished_time = finishedTime;
-        user.creating_creatures[creatureIndex].unlock_started = true;
+        // Create a direct reference to the creature object for clarity
+        const creatureToUpdate = user.creating_creatures[creatureIndex];
         
-        // Mark as modified
+        // Explicitly set each field - helps ensure MongoDB sees the changes
+        creatureToUpdate.started_time = currentTime;
+        creatureToUpdate.finished_time = finishedTime;
+        creatureToUpdate.unlock_started = true;
+        
+        // Log the update for debugging
+        console.log(`Updated creature unlock status:
+            creature: ${creatureToUpdate.name}
+            unlock_started: ${creatureToUpdate.unlock_started}
+            started_time: ${creatureToUpdate.started_time}
+            finished_time: ${creatureToUpdate.finished_time}
+        `);
+        
+        // Force MongoDB to recognize the change by setting the entire creating_creatures array
+        // This is a more robust way to ensure nested document updates are saved
+        user.creating_creatures[creatureIndex] = creatureToUpdate;
+        
+        // Mark the entire creating_creatures array as modified for Mongoose
         user.markModified('creating_creatures');
         
-        // Save user
-        await user.save();
+        // Also mark the specific creature as modified with its index path
+        user.markModified(`creating_creatures.${creatureIndex}.unlock_started`);
+        user.markModified(`creating_creatures.${creatureIndex}.started_time`);
+        user.markModified(`creating_creatures.${creatureIndex}.finished_time`);
         
-        return {
-            success: true,
-            message: `Creature ${creature.name} unlock timer started`,
-            data: {
-                creature: {
-                    _id: creature._id,
-                    name: creature.name,
-                    started_time: currentTime,
-                    finished_time: finishedTime,
-                    unlock_time_minutes: unlockTimeMinutes
+        // Force save with maximal precautions
+        try {
+            // First try to save the document with the regular save method
+            await user.save();
+            console.log(`First save attempt completed for user ${userId}`);
+            
+            // Verify the save was successful by reading back from the database
+            let updatedUser = await User.findOne({ userId });
+            let updatedCreature = updatedUser.creating_creatures.find(c => c._id.toString() === creatureId);
+            
+            // Check if the update was successful
+            if (!updatedCreature || updatedCreature.unlock_started !== true) {
+                console.error(`WARNING: First save attempt failed to update unlock_started!`);
+                console.log(`Attempting more aggressive update with findOneAndUpdate...`);
+                
+                // If the first save didn't work, try a more direct update using findOneAndUpdate
+                const updateResult = await User.findOneAndUpdate(
+                    { 
+                        userId: userId, 
+                        "creating_creatures._id": creatureId 
+                    },
+                    { 
+                        $set: { 
+                            "creating_creatures.$.unlock_started": true,
+                            "creating_creatures.$.started_time": currentTime,
+                            "creating_creatures.$.finished_time": finishedTime
+                        } 
+                    },
+                    { new: true }
+                );
+                
+                if (updateResult) {
+                    console.log(`Direct update completed successfully`);
+                    updatedUser = updateResult;
+                    updatedCreature = updatedUser.creating_creatures.find(c => c._id.toString() === creatureId);
                 }
             }
-        };
+            
+            // Final verification
+            if (updatedCreature) {
+                console.log(`Final verification - creature after save:
+                    _id: ${updatedCreature._id}
+                    name: ${updatedCreature.name}
+                    unlock_started: ${updatedCreature.unlock_started}
+                    started_time: ${updatedCreature.started_time}
+                    finished_time: ${updatedCreature.finished_time}
+                `);
+                
+                if (!updatedCreature.unlock_started) {
+                    console.error(`CRITICAL WARNING: unlock_started is still false after all save attempts!`);
+                }
+            }
+            
+            // Return consistent response even if save didn't work properly
+            // This ensures the client receives the correct expected state
+            return {
+                success: true,
+                message: `Creature ${creature.name} unlock timer started`,
+                data: {
+                    creature: {
+                        _id: creature._id,
+                        name: creature.name,
+                        remaining_minutes: unlockTimeMinutes,
+                        unlock_started: true, // Explicitly return the updated value
+                        started_time: currentTime,
+                        finished_time: finishedTime
+                    }
+                }
+            };
+        } catch (saveError) {
+            console.error(`Error saving user with creature unlock status: ${saveError}`);
+            throw saveError;
+        }
     } catch (error) {
         console.error('Error in startCreatureUnlock:', error);
         return {
@@ -4529,6 +4816,75 @@ async function updateCreatureSlotsBasedOnSubscription(userId) {
     }
 }
 
+/**
+ * Get a user's creature inventory
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Creature inventory data
+ */
+async function getCreatureInventory(userId) {
+    try {
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+
+        // Initialize creature_inventory if it doesn't exist
+        if (!user.creature_inventory) {
+            user.creature_inventory = [];
+            await user.save();
+        }
+
+        // Fetch all creature templates for more complete information
+        const creatureTemplates = await Creature.find();
+        const templateMap = {};
+        
+        creatureTemplates.forEach(template => {
+            templateMap[template._id.toString()] = template;
+        });
+
+        // Enhance inventory items with more details
+        const enhancedInventory = user.creature_inventory.map(item => {
+            const template = templateMap[item.creature_id.toString()];
+            
+            return {
+                ...item.toObject ? item.toObject() : item,
+                creature_id: item.creature_id.toString(),
+                unlock_time: template ? template.unlock_time : 10,
+                anima_cost: template ? template.anima_cost : 80,
+                base_attack: item.base_attack || (template ? template.base_attack : 50),
+                base_health: item.base_health || (template ? template.base_health : 300),
+                gold_coins: item.gold_coins || (template ? template.gold_coins : 50),
+                arcane_energy: item.arcane_energy || (template ? template.arcane_energy : 99),
+                critical_damage: item.critical_damage || (template ? template.critical_damage : 100),
+                critical_damage_percentage: item.critical_damage_percentage || (template ? template.critical_damage_percentage : 25),
+                armor: item.armor || (template ? template.armor : 0),
+                speed: item.speed || (template ? template.speed : 100),
+                template_available: !!template
+            };
+        });
+
+        return {
+            success: true,
+            message: 'Creature inventory retrieved successfully',
+            data: {
+                inventory: enhancedInventory,
+                total_count: enhancedInventory.length,
+                total_creatures: enhancedInventory.reduce((acc, item) => acc + item.count, 0)
+            }
+        };
+    } catch (error) {
+        console.error('Error in getCreatureInventory:', error);
+        return {
+            success: false,
+            message: `Error getting creature inventory: ${error.message}`
+        };
+    }
+}
+
 // Export the function
 module.exports = {
     getUserWithDetails,
@@ -4567,6 +4923,7 @@ module.exports = {
     assignCreatureToBuilding,
     startCreatureUnlock,
     fixBuildingCreatureRelationships,
-    updateCreatureSlotsBasedOnSubscription
+    updateCreatureSlotsBasedOnSubscription,
+    getCreatureInventory
 };
         

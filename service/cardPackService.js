@@ -94,7 +94,7 @@ async function openCardPack(userId, packId) {
                     });
                 } else if (selectedReward.reward_type === 'creature') {
                     // Fetch complete creature data from the database
-                    console.log(`Adding creature ${selectedReward.creature_name} to user's creatures array`);
+                    console.log(`Adding creature ${selectedReward.creature_name} to user's creature inventory`);
                     
                     // Find the creature in the database by name (case insensitive)
                     const creatureTemplate = await Creature.findOne({
@@ -105,46 +105,48 @@ async function openCardPack(userId, packId) {
                         console.log(`Warning: Creature template not found for ${selectedReward.creature_name}`);
                     }
                     
-                    const creatureId = new mongoose.Types.ObjectId();
-                    
-                    // Create creature with complete data from template if found
-                    const newCreature = {
-                        _id: creatureId,
-                        creature_id: creatureId,
-                        name: selectedReward.creature_name,
-                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
-                                      (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
-                        type: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
-                        level: 1,
-                        building_index: 0, // Default building index
-                        base_attack: creatureTemplate ? creatureTemplate.base_attack : (selectedReward.base_attack || 50),
-                        base_health: creatureTemplate ? creatureTemplate.base_health : (selectedReward.base_health || 300),
-                        attack: creatureTemplate ? creatureTemplate.base_attack : (selectedReward.base_attack || 50),
-                        health: creatureTemplate ? creatureTemplate.base_health : (selectedReward.base_health || 300),
-                        gold_coins: creatureTemplate ? creatureTemplate.gold_coins : 0,
-                        arcane_energy: creatureTemplate ? creatureTemplate.arcane_energy : 0,
-                        image: creatureTemplate ? creatureTemplate.image : null,
-                        description: creatureTemplate ? creatureTemplate.description : `A mysterious ${selectedReward.creature_name}`,
-                        unlock_level: creatureTemplate ? creatureTemplate.unlock_level : 1,
-                        count: 1
-                    };
-                    
-                    // If we have level stats from the template, add the level 1 stats
-                    if (creatureTemplate && creatureTemplate.level_stats && creatureTemplate.level_stats.length > 0) {
-                        const level1Stats = creatureTemplate.level_stats.find(stat => stat.level === 1);
-                        if (level1Stats) {
-                            newCreature.attack = level1Stats.attack;
-                            newCreature.health = level1Stats.health;
-                            newCreature.gold_coins = level1Stats.gold || creatureTemplate.gold_coins;
-                            newCreature.arcane_energy = level1Stats.arcane_energy || creatureTemplate.arcane_energy;
-                        }
+                    // Initialize creature_inventory array if it doesn't exist
+                    if (!user.creature_inventory) {
+                        user.creature_inventory = [];
                     }
                     
-                    // Add to creatures array
-                    if (!user.creatures) {
-                        user.creatures = [];
+                    // Check if the creature already exists in the inventory
+                    const creatureInInventory = user.creature_inventory.find(c => 
+                        (creatureTemplate && c.creature_id.toString() === creatureTemplate._id.toString()) ||
+                        c.name.toLowerCase() === selectedReward.creature_name.toLowerCase()
+                    );
+                    
+                    if (creatureInInventory) {
+                        // Increment the count for existing creature
+                        creatureInInventory.count += 1;
+                        console.log(`Incremented count for ${selectedReward.creature_name} in inventory to ${creatureInInventory.count}`);
+                    } else {
+                        // Add new creature to inventory with all stats
+                        const newInventoryItem = {
+                            creature_id: creatureTemplate ? creatureTemplate._id : new mongoose.Types.ObjectId(),
+                            creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
+                                         (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
+                            name: selectedReward.creature_name,
+                            count: 1,
+                            rarity: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
+                            image: creatureTemplate ? creatureTemplate.image : null,
+                            // Add important stats
+                            base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
+                            base_health: creatureTemplate ? creatureTemplate.base_health : 300,
+                            gold_coins: creatureTemplate ? creatureTemplate.gold_coins : 50,
+                            arcane_energy: creatureTemplate ? creatureTemplate.arcane_energy : 99,
+                            critical_damage: creatureTemplate ? creatureTemplate.critical_damage : 100,
+                            critical_damage_percentage: creatureTemplate ? creatureTemplate.critical_damage_percentage : 25,
+                            armor: creatureTemplate ? creatureTemplate.armor : 0,
+                            speed: creatureTemplate ? creatureTemplate.speed : 100
+                        };
+                        
+                        user.creature_inventory.push(newInventoryItem);
+                        console.log(`Added new creature ${selectedReward.creature_name} to inventory with count 1`);
                     }
-                    user.creatures.push(newCreature);
+                    
+                    // Mark the creature_inventory as modified
+                    user.markModified('creature_inventory');
                     
                     // Increment creatures_obtained counter
                     if (user.card_stats && user.card_stats.creatures_obtained !== undefined) {
@@ -154,10 +156,16 @@ async function openCardPack(userId, packId) {
                     rewards.push({
                         type: 'creature',
                         creature_name: selectedReward.creature_name,
-                        creature_id: creatureId.toString(),
-                        rarity: selectedReward.rarity,
+                        creature_id: creatureTemplate ? creatureTemplate._id.toString() : null,
+                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : selectedReward.creature_type,
+                        rarity: creatureTemplate ? creatureTemplate.type : selectedReward.rarity,
                         card_number: card.card_number,
-                        complete_data: !!creatureTemplate // Flag indicating if we got complete data
+                        added_to_inventory: true,
+                        // Add important stats to the response
+                        base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
+                        base_health: creatureTemplate ? creatureTemplate.base_health : 300,
+                        gold_coins: creatureTemplate ? creatureTemplate.gold_coins : 50,
+                        arcane_energy: creatureTemplate ? creatureTemplate.arcane_energy : 99
                     });
                 }
             }
@@ -195,13 +203,13 @@ async function openCardPack(userId, packId) {
         user.markModified('currency');
         user.markModified('card_stats');
         user.markModified('last_opened_packs');
-        user.markModified('creatures');
+        user.markModified('creature_inventory'); // Mark creature_inventory as modified instead of creating_creatures
         
         // Remove locked_creatures to ensure we aren't using it anymore
         if (user.locked_creatures && user.locked_creatures.length > 0) {
-            console.log(`Removing ${user.locked_creatures.length} locked creatures and adding them to main creatures array`);
+            console.log(`Removing ${user.locked_creatures.length} locked creatures and adding them to creating_creatures array`);
             
-            // Migrate any existing locked creatures to the main creatures array
+            // Migrate any existing locked creatures to the creating_creatures array
             for (const lockedCreature of user.locked_creatures) {
                 const migratedCreatureId = new mongoose.Types.ObjectId();
                 
@@ -209,6 +217,11 @@ async function openCardPack(userId, packId) {
                 const creatureTemplate = await Creature.findOne({
                     name: { $regex: new RegExp('^' + lockedCreature.name + '$', 'i') }
                 });
+                
+                // Set unlock time from creature template or use default
+                const unlockTimeMinutes = creatureTemplate ? creatureTemplate.unlock_time : 10;
+                const currentTime = new Date();
+                const finishedTime = new Date(currentTime.getTime() + (unlockTimeMinutes * 60000));
                 
                 const migratedCreature = {
                     _id: migratedCreatureId,
@@ -228,11 +241,29 @@ async function openCardPack(userId, packId) {
                     image: creatureTemplate ? creatureTemplate.image : null,
                     description: creatureTemplate ? creatureTemplate.description : `A mysterious ${lockedCreature.name}`,
                     unlock_level: creatureTemplate ? creatureTemplate.unlock_level : 1,
-                    count: 1
+                    count: 1,
+                    // Add additional stats
+                    critical_damage: creatureTemplate ? creatureTemplate.critical_damage : 100,
+                    critical_damage_percentage: creatureTemplate ? creatureTemplate.critical_damage_percentage : 25,
+                    armor: creatureTemplate ? creatureTemplate.armor : 0,
+                    speed: creatureTemplate ? creatureTemplate.speed : 100,
+                    // Add unlock-related fields
+                    unlock_time: unlockTimeMinutes,
+                    unlock_started: false, // Don't auto-start the unlock for card pack creatures
+                    // Set placeholder future date - will be updated when unlock starts
+                    started_time: new Date(currentTime.getTime() + 365 * 24 * 60 * 60 * 1000),
+                    // Set a placeholder future date (1 year from now) - will be updated when unlock starts
+                    finished_time: new Date(currentTime.getTime() + 365 * 24 * 60 * 60 * 1000),
+                    anima_cost: creatureTemplate ? creatureTemplate.anima_cost : 80,
+                    slot_number: null, // No slot for card pack creatures
+                    building_index: 0 // Explicitly set building_index to 0 for card pack creatures
                 };
                 
-                // Add to creatures array
-                user.creatures.push(migratedCreature);
+                // Add to creating_creatures array
+                if (!user.creating_creatures) {
+                    user.creating_creatures = [];
+                }
+                user.creating_creatures.push(migratedCreature);
             }
             
             // Clear locked_creatures array
@@ -252,7 +283,8 @@ async function openCardPack(userId, packId) {
             success: true,
             pack_type: cardPack.pack_type,
             rewards: rewards,
-            message: `Successfully opened ${cardPack.pack_type}`
+            message: `Successfully opened ${cardPack.pack_type}. Any creatures obtained need to have their unlock timer started and then unlocked.`,
+            unlock_instructions: "Any creatures obtained from this card pack have been added to your creating_creatures array. Use startCreatureUnlock API to start the timer, then unlockCreature API when the timer finishes."
         };
     } catch (error) {
         console.error('Error opening card pack:', error);
