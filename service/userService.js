@@ -4446,6 +4446,89 @@ async function fixBuildingCreatureRelationships(userIdParam) {
     }
 }
 
+// Add this function after purchaseCreature
+
+/**
+ * Update creature slots based on user's subscription status
+ * @param {string} userId - User ID
+ */
+async function updateCreatureSlotsBasedOnSubscription(userId) {
+    try {
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+
+        // Check if user has an active subscription
+        const hasActiveSubscription = user.elite_pass && user.elite_pass.active;
+        
+        // If not a subscriber, no need to update
+        if (!hasActiveSubscription) {
+            return {
+                success: true,
+                message: 'User does not have an active subscription, no slot update needed',
+                slots_updated: 0
+            };
+        }
+
+        // Get the slot configurations
+        const CreatureSlot = mongoose.model('CreatureSlot');
+        const slotConfigs = await CreatureSlot.find().sort({ slot_number: 1 });
+        
+        // Initialize creature_slots array if it doesn't exist
+        if (!user.creature_slots) {
+            user.creature_slots = [];
+        }
+        
+        let slotsUpdated = 0;
+        
+        // For each elite slot, check if user has it unlocked
+        for (const slotConfig of slotConfigs) {
+            // Only process elite slots
+            if (slotConfig.is_elite) {
+                const slotNumber = slotConfig.slot_number;
+                const existingSlot = user.creature_slots.find(s => s.slot_number === slotNumber);
+                
+                // If slot doesn't exist or is not unlocked, unlock it
+                if (!existingSlot) {
+                    user.creature_slots.push({
+                        slot_number: slotNumber,
+                        is_unlocked: true,
+                        unlocked_at: new Date()
+                    });
+                    slotsUpdated++;
+                } else if (!existingSlot.is_unlocked) {
+                    existingSlot.is_unlocked = true;
+                    existingSlot.unlocked_at = new Date();
+                    slotsUpdated++;
+                }
+            }
+        }
+        
+        // Save user if any slots were updated
+        if (slotsUpdated > 0) {
+            user.markModified('creature_slots');
+            await user.save();
+        }
+        
+        return {
+            success: true,
+            message: `Updated ${slotsUpdated} elite creature slots based on subscription`,
+            slots_updated: slotsUpdated
+        };
+    } catch (error) {
+        console.error('Error updating creature slots based on subscription:', error);
+        return {
+            success: false,
+            message: error.message
+        };
+    }
+}
+
 // Export the function
 module.exports = {
     getUserWithDetails,
@@ -4483,6 +4566,7 @@ module.exports = {
     unlockCreature,
     assignCreatureToBuilding,
     startCreatureUnlock,
-    fixBuildingCreatureRelationships
+    fixBuildingCreatureRelationships,
+    updateCreatureSlotsBasedOnSubscription
 };
         

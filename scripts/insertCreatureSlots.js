@@ -51,7 +51,7 @@ async function insertSlots() {
       {
         slot_number: 1,
         is_elite: false,
-        gold_cost: 100,
+        gold_cost: 0,
         is_default: true
       },
       {
