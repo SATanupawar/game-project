@@ -47,6 +47,9 @@ const mongoose = require('mongoose');
 const Building = require('./models/building');
 const userService = require('./service/userService');
 const leaderboardRoutes = require('./routes/leaderboardRoute');
+const battlePassRoutes = require('./routes/battlePassRoute');
+const subscriptionRoutes = require('./routes/subscriptionRoute');
+const battlePassProgressRoutes = require('./routes/battlePassProgressRoute');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -92,6 +95,9 @@ app.use('/api/push-notifications', pushNotificationRoutes);
 
 // Add to your routes
 app.use('/api', leaderboardRoutes);
+app.use('/api', battlePassRoutes);
+app.use('/api', subscriptionRoutes);
+app.use('/api', battlePassProgressRoutes);
 
 // Direct creature purchase route to bypass any conflicts with userRoutes
 app.post('/api/user/:userId/creature/purchase', async (req, res) => {

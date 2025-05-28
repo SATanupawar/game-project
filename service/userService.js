@@ -1497,14 +1497,17 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         
         // Find the specific creature by its ID
         let creatureEntry = null;
+        let creatureArrayIndex = -1;
         for (let i = 0; i < user.creatures.length; i++) {
             const entry = user.creatures[i];
             if (entry.building_index === buildingIndex) {
                 if (entry._id && entry._id.toString() === creatureIdParam) {
                     creatureEntry = entry;
+                    creatureArrayIndex = i;
                     break;
                 } else if (entry.creature_id && entry.creature_id.toString() === creatureIdParam) {
                     creatureEntry = entry;
+                    creatureArrayIndex = i;
                     break;
                 }
             }
@@ -1663,9 +1666,6 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             console.log(`Deducted ${requiredArcaneEnergy} arcane energy. Remaining: ${user.currency.arcane_energy}`);
         }
         
-        // Update the creature's level
-        creatureEntry.level = parsedLevel;
-        
         // Get base stats from creature entry or template
         let baseAttack = creatureEntry.base_attack || creatureTemplate.base_attack;
         let baseHealth = creatureEntry.base_health || creatureTemplate.base_health;
@@ -1673,10 +1673,6 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         // If base stats are still missing, set defaults
         if (!baseAttack) baseAttack = 10;
         if (!baseHealth) baseHealth = 50;
-        
-        // Save base stats to the creature entry
-        if (!creatureEntry.base_attack) creatureEntry.base_attack = baseAttack;
-        if (!creatureEntry.base_health) creatureEntry.base_health = baseHealth;
         
         // Calculate new stats based on the level
         let attack = baseAttack;
@@ -1710,10 +1706,6 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             health += Math.round(health * healthGrowth);
         }
         
-        // Save the updated stats directly in the creature entry
-        creatureEntry.attack = attack;
-        creatureEntry.health = health;
-        
         // Get gold and arcane energy directly from level_stats array
         let goldCoins = creatureTemplate.gold_coins || 0;
         let arcaneEnergy = creatureTemplate.arcane_energy || 0;
@@ -1730,12 +1722,10 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                 // Use attack and health from level_stats if available
                 if (levelStats.attack) {
                     attack = levelStats.attack;
-                    creatureEntry.attack = attack;
                 }
                 
                 if (levelStats.health) {
                     health = levelStats.health;
-                    creatureEntry.health = health;
                 }
                 
                 // Use gold from level_stats
@@ -1746,6 +1736,7 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                 // Use arcane_energy from level_stats
                 if (levelStats.arcane_energy) {
                     arcaneEnergy = levelStats.arcane_energy;
+                    console.log(`Setting arcane energy to ${arcaneEnergy} for level ${parsedLevel}`);
                 }
             } else {
                 console.log(`No level stats found for level ${parsedLevel}`);
@@ -1754,17 +1745,39 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             console.log(`No level_stats array found in creature template for ${creatureTemplate.name}`);
         }
         
-        // Save gold and arcane energy values
-        creatureEntry.gold_coins = goldCoins;
-        creatureEntry.arcane_energy = arcaneEnergy;
+        // Use direct MongoDB update to update the creature in the creatures array
+        console.log(`Updating creature in creatures array at index ${creatureArrayIndex}`);
+        console.log(`Setting arcane_energy to ${arcaneEnergy}, attack to ${attack}, health to ${health}, gold_coins to ${goldCoins}, level to ${parsedLevel}`);
         
-        // Save the user
+        // Save the user first to make sure the currency changes are applied
         await user.save();
+        
+        // Perform a direct MongoDB update on the creature in the creatures array
+        const updateResult = await User.updateOne(
+            { 
+                userId: userIdParam, 
+                "creatures._id": new mongoose.Types.ObjectId(creatureEntry._id) 
+            },
+            { 
+                $set: { 
+                    "creatures.$.level": parsedLevel,
+                    "creatures.$.attack": attack,
+                    "creatures.$.health": health,
+                    "creatures.$.gold_coins": goldCoins,
+                    "creatures.$.arcane_energy": arcaneEnergy
+                } 
+            }
+        );
+        
+        console.log(`MongoDB update result:`, updateResult);
+        
+        // Check if the update was successful
+        if (updateResult.nModified === 0) {
+            console.warn(`Warning: MongoDB update did not modify any documents. This could mean the data didn't change or the query didn't match.`);
+        }
         
         console.log(`Updated creature ${creatureEntry.name || creatureEntry.creature_type} from level ${previousLevel} to ${parsedLevel}`);
         console.log(`New stats: Attack ${attack}, Health ${health}, Gold ${goldCoins}, Arcane Energy ${arcaneEnergy}`);
-
-        // Removed next level cost calculation as requested
 
         return {
             success: true,

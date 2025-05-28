@@ -297,6 +297,25 @@ async function claimQuestReward(userId, questId) {
                     user.level += 1;
                     rewardMessage += ` and leveled up to ${user.level}!`;
                 }
+                
+                // AUTOMATICALLY ADD SAME XP TO BATTLE PASS
+                try {
+                    // Import the battle pass service
+                    const directBattlePassService = require('../service/directBattlePassService');
+                    
+                    // Add XP to battle pass (don't await to avoid slowing down the response)
+                    directBattlePassService.addUserBattlePassXP(userId, quest.reward_amount, 'quest_completion')
+                        .then(battlePassResult => {
+                            if (!battlePassResult.success) {
+                                console.error('Failed to sync quest XP to battle pass:', battlePassResult.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error syncing quest XP to battle pass:', error);
+                        });
+                } catch (error) {
+                    console.error('Error importing battle pass service:', error);
+                }
                 break;
                 
             case 'card_pack':

@@ -124,12 +124,12 @@ async function openCardPack(userId, packId) {
                         // Add new creature to inventory with all stats
                         const newInventoryItem = {
                             creature_id: creatureTemplate ? creatureTemplate._id : new mongoose.Types.ObjectId(),
-                            creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
-                                         (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
+                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
+                                      (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
                             name: selectedReward.creature_name,
                             count: 1,
                             rarity: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
-                            image: creatureTemplate ? creatureTemplate.image : null,
+                        image: creatureTemplate ? creatureTemplate.image : null,
                             // Add important stats
                             base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
                             base_health: creatureTemplate ? creatureTemplate.base_health : 300,

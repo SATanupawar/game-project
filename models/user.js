@@ -224,6 +224,37 @@ const userCreatureSlotsSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+// Define schema for battle pass summary
+const battlePassSummarySchema = new mongoose.Schema({
+    current_level: {
+        type: Number,
+        default: 0
+    },
+    current_xp: {
+        type: Number,
+        default: 0
+    },
+    is_elite: {
+        type: Boolean,
+        default: false
+    },
+    claimed_rewards: [{
+        level: Number,
+        is_elite: Boolean,
+        reward_type: String,
+        claim_date: Date
+    }],
+    battle_pass_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'BattlePass'
+    },
+    battle_pass_name: String,
+    last_updated: {
+        type: Date,
+        default: Date.now
+    }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -628,6 +659,10 @@ const userSchema = new mongoose.Schema({
             type: Number,
             default: 0
         }
+    },
+    battlePassSummary: {
+        type: battlePassSummarySchema,
+        default: () => ({})
     },
 }, {
     timestamps: true,

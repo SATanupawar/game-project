@@ -3548,6 +3548,21 @@ router.post('/:userId/add-xp', async (req, res) => {
             xpNeededForNextLevel = nextLevelData.required_xp - (currentLevelData.required_xp + remainingXP);
         }
 
+        // AUTOMATICALLY ADD SAME XP TO BATTLE PASS
+        // Import the battle pass service
+        const directBattlePassService = require('../service/directBattlePassService');
+        
+        // Add XP to battle pass (don't await to avoid slowing down the response)
+        directBattlePassService.addUserBattlePassXP(userId, xp_amount, 'user_xp_sync')
+            .then(battlePassResult => {
+                if (!battlePassResult.success) {
+                    console.error('Failed to sync XP to battle pass:', battlePassResult.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error syncing XP to battle pass:', error);
+            });
+
         // Save the updated user
         await user.save();
 
