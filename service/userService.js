@@ -4017,6 +4017,7 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             base_attack: creatureTemplate.base_attack,
             base_health: creatureTemplate.base_health,
             gold_coins: creatureTemplate.gold_coins,
+            arcane_energy: creatureTemplate.arcane_energy || 99, // Add arcane_energy with default fallback
             image: creatureTemplate.image || 'default.png',
             description: creatureTemplate.description || '',
             anima_cost: animaCost,
@@ -4198,6 +4199,7 @@ async function checkCreatureUnlockStatus(userId) {
                 base_attack: creature.base_attack,
                 base_health: creature.base_health,
                 gold_coins: creature.gold_coins,
+                arcane_energy: creature.arcane_energy || 99, // Add arcane_energy
                 image: creature.image,
                 description: creature.description,
                 // Add additional stats
@@ -4342,6 +4344,7 @@ async function unlockCreature(userId, creatureId, forceUnlock = false) {
         if (!creatureWithoutSlot.critical_damage_percentage) creatureWithoutSlot.critical_damage_percentage = 25;
         if (!creatureWithoutSlot.armor) creatureWithoutSlot.armor = 0;
         if (!creatureWithoutSlot.speed) creatureWithoutSlot.speed = 100;
+        if (!creatureWithoutSlot.arcane_energy) creatureWithoutSlot.arcane_energy = 99; // Ensure arcane_energy is preserved
             
         // All creatures start with building_index = 0 when unlocked
         // This indicates they need to be assigned to a building by the player
@@ -4648,7 +4651,8 @@ async function startCreatureUnlock(userId, creatureId) {
                         remaining_minutes: unlockTimeMinutes,
                         unlock_started: true, // Explicitly return the updated value
                         started_time: currentTime,
-                        finished_time: finishedTime
+                        finished_time: finishedTime,
+                        arcane_energy: creature.arcane_energy || 99 // Add arcane_energy to response
                     }
                 }
             };
