@@ -165,6 +165,17 @@ async function cancelSubscription(userId) {
             // but turn off auto-renewal
             user.elite_pass.auto_renew = false;
             user.markModified('elite_pass');
+            
+            // Update subscription history if it exists
+            if (user.subscription_history && user.subscription_history.length > 0) {
+                // Get the most recent subscription in history and mark it as cancelled
+                const latestIndex = user.subscription_history.length - 1;
+                if (user.subscription_history[latestIndex].status === 'active') {
+                    user.subscription_history[latestIndex].status = 'cancelled';
+                    user.markModified('subscription_history');
+                }
+            }
+            
             await user.save();
         }
 
@@ -305,6 +316,17 @@ async function checkExpiredSubscriptions() {
             if (user && user.elite_pass && user.elite_pass.active) {
                 user.elite_pass.active = false;
                 user.markModified('elite_pass');
+                
+                // Update subscription history status
+                if (user.subscription_history && user.subscription_history.length > 0) {
+                    const latestIndex = user.subscription_history.length - 1;
+                    if (user.subscription_history[latestIndex].status === 'active' || 
+                        user.subscription_history[latestIndex].status === 'cancelled') {
+                        user.subscription_history[latestIndex].status = 'expired';
+                        user.markModified('subscription_history');
+                    }
+                }
+                
                 await user.save();
                 
                 // Update any active battle passes
@@ -344,10 +366,301 @@ async function checkExpiredSubscriptions() {
     }
 }
 
+/**
+ * Process user subscription and update elite battle pass access
+ * @param {string} userId - User ID
+ * @param {string} subscriptionType - Type of subscription (monthly, quarterly, yearly)
+ * @returns {Promise<Object>} Result of subscription processing
+ */
+async function processUserSubscription(userId, subscriptionType) {
+    try {
+        // Validate subscription type
+        const validTypes = ['monthly', 'quarterly', 'yearly'];
+        if (!validTypes.includes(subscriptionType)) {
+            return {
+                success: false,
+                message: 'Invalid subscription type. Must be monthly, quarterly, or yearly'
+            };
+        }
+
+        // Calculate subscription end date based on type
+        const now = new Date();
+        let endDate = new Date();
+        let price = 0;
+
+        switch (subscriptionType) {
+            case 'monthly':
+                endDate = new Date(now);
+                endDate.setMonth(endDate.getMonth() + 1);
+                price = 599;
+                break;
+            case 'quarterly':
+                endDate = new Date(now);
+                endDate.setMonth(endDate.getMonth() + 3);
+                price = 1599;
+                break;
+            case 'yearly':
+                endDate = new Date(now);
+                endDate.setFullYear(endDate.getFullYear() + 1);
+                price = 6799;
+                break;
+        }
+
+        // Find or update user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+
+        // Create or update subscription record
+        let subscription = await Subscription.getActiveSubscription(userId);
+        
+        if (subscription) {
+            // Deactivate the current subscription if it exists
+            subscription.active = false;
+            await subscription.save();
+        }
+        
+        // Create new subscription record
+        subscription = new Subscription({
+            userId,
+            type: subscriptionType,
+            price,
+            start_date: now,
+            end_date: endDate,
+            active: true,
+            auto_renew: false,
+            payment_id: null,
+            subscription_history: [{
+                action: 'created',
+                date: now,
+                note: `${subscriptionType} subscription created`
+            }]
+        });
+        
+        await subscription.save();
+
+        // Update elite pass information with standardized fields
+        user.elite_pass = {
+            active: true,
+            subscription_type: subscriptionType,
+            start_date: now,
+            end_date: endDate,
+            activated_at: now,  // For backward compatibility
+            expires_at: endDate, // For backward compatibility
+            purchase_date: now,  // For backward compatibility
+            expiry_date: endDate // For backward compatibility
+        };
+
+        // Add to user's subscription history
+        let battlePassInfo = null;
+        
+        // Get current active battle pass for history
+        const battlePassForHistory = await BattlePass.findOne({
+            start_date: { $lte: now },
+            end_date: { $gte: now },
+            active: true
+        });
+
+        if (battlePassForHistory) {
+            // Find or create user battle pass record
+            const userBattlePass = await UserBattlePass.findOne({
+                userId,
+                battle_pass_id: battlePassForHistory._id
+            });
+            
+            if (userBattlePass) {
+                battlePassInfo = {
+                    name: battlePassForHistory.name,
+                    is_elite: true,
+                    current_level: userBattlePass.current_level,
+                    start_date: battlePassForHistory.start_date,
+                    end_date: battlePassForHistory.end_date
+                };
+            } else {
+                battlePassInfo = {
+                    name: battlePassForHistory.name,
+                    is_elite: true,
+                    current_level: 1,
+                    start_date: battlePassForHistory.start_date,
+                    end_date: battlePassForHistory.end_date
+                };
+            }
+        }
+
+        // Add subscription record to user's history
+        user.subscription_history = user.subscription_history || [];
+        user.subscription_history.push({
+            type: subscriptionType,
+            start_date: now,
+            end_date: endDate,
+            price: price,
+            status: 'active',
+            elite_pass: {
+                active: true,
+                start_date: now,
+                end_date: endDate
+            },
+            battle_pass: battlePassInfo,
+            created_at: now
+        });
+        
+        // Update battlePassSummary if it exists
+        if (user.battlePassSummary) {
+            user.battlePassSummary.is_elite = true;
+            user.markModified('battlePassSummary');
+        }
+
+        // Save user changes
+        user.markModified('elite_pass');
+        user.markModified('subscription_history');
+        await user.save();
+
+        // Find current active battle pass
+        const currentBattlePass = await BattlePass.findOne({
+            start_date: { $lte: now },
+            end_date: { $gte: now },
+            active: true
+        });
+
+        if (currentBattlePass) {
+            // Find or create user battle pass record
+            let userBattlePass = await UserBattlePass.findOne({
+                userId,
+                battle_pass_id: currentBattlePass._id
+            });
+
+            if (userBattlePass) {
+                // Update existing battle pass to elite
+                userBattlePass.is_elite = true;
+                await userBattlePass.save();
+            } else {
+                // Create new user battle pass with elite status
+                userBattlePass = new UserBattlePass({
+                    userId,
+                    battle_pass_id: currentBattlePass._id,
+                    current_xp: 0,
+                    current_level: 1,
+                    is_elite: true,
+                    claimed_rewards: [],
+                    xp_history: []
+                });
+                await userBattlePass.save();
+            }
+        }
+
+        return {
+            success: true,
+            message: `Successfully activated ${subscriptionType} subscription`,
+            data: {
+                subscription: {
+                    type: subscriptionType,
+                    start_date: now,
+                    end_date: endDate,
+                    price: price
+                },
+                elite_pass: {
+                    active: true,
+                    start_date: now,
+                    end_date: endDate
+                },
+                battle_pass_elite: true
+            }
+        };
+    } catch (error) {
+        console.error('Error processing subscription:', error);
+        return {
+            success: false,
+            message: 'Error processing subscription',
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Check user's subscription status
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} User's subscription status
+ */
+async function checkSubscriptionStatus(userId) {
+    try {
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+
+        const now = new Date();
+        
+        // Check for active subscription record
+        const subscription = await Subscription.getActiveSubscription(userId);
+        
+        // Get end date from subscription or elite pass
+        const endDate = subscription?.end_date || 
+                        user.elite_pass?.end_date || 
+                        user.elite_pass?.expires_at || 
+                        user.elite_pass?.expiry_date;
+                        
+        // Determine if subscription is active
+        const isActive = (subscription && subscription.active) || 
+                         (user.elite_pass?.active && endDate && new Date(endDate) > now);
+
+        // Get current battle pass info
+        const battlePass = await BattlePass.findOne({
+            start_date: { $lte: now },
+            end_date: { $gte: now },
+            active: true
+        });
+        
+        let battlePassInfo = null;
+        if (battlePass) {
+            const userBattlePass = await UserBattlePass.findOne({
+                userId,
+                battle_pass_id: battlePass._id
+            });
+            
+            if (userBattlePass) {
+                battlePassInfo = {
+                    is_elite: userBattlePass.is_elite,
+                    current_level: userBattlePass.current_level,
+                    battle_pass_name: battlePass.name
+                };
+            }
+        }
+
+        return {
+            success: true,
+            data: {
+                has_subscription: isActive,
+                subscription_type: subscription?.type || user.elite_pass?.subscription_type,
+                start_date: subscription?.start_date || user.elite_pass?.start_date || user.elite_pass?.activated_at || user.elite_pass?.purchase_date,
+                end_date: endDate,
+                days_remaining: endDate ? Math.ceil((new Date(endDate) - now) / (1000 * 60 * 60 * 24)) : 0,
+                is_elite: isActive,
+                battle_pass: battlePassInfo
+            }
+        };
+    } catch (error) {
+        console.error('Error checking subscription status:', error);
+        return {
+            success: false,
+            message: 'Error checking subscription status',
+            error: error.message
+        };
+    }
+}
+
 module.exports = {
     createSubscription,
     cancelSubscription,
     getSubscriptionStatus,
     renewSubscription,
-    checkExpiredSubscriptions
+    checkExpiredSubscriptions,
+    processUserSubscription,
+    checkSubscriptionStatus
 }; 

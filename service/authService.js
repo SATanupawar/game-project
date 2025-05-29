@@ -98,6 +98,39 @@ async function login(userId, userName, additionalData = {}) {
         // Assign active quests to the user
         const questsResult = await questService.assignActiveQuestsToUser(userId);
         
+        // Check if user has an active elite pass and assign elite quests if they do
+        let eliteQuestsResult = null;
+        if (user.elite_pass && user.elite_pass.active) {
+            try {
+                eliteQuestsResult = await questService.assignEliteQuestsToUser(userId);
+                
+                // If elite quests were assigned successfully, add them to the response
+                if (eliteQuestsResult && eliteQuestsResult.success) {
+                    // Add elite quests to weekly quests in the result
+                    if (eliteQuestsResult.data && eliteQuestsResult.data.assigned_quests) {
+                        // Create elite quests section if it doesn't exist
+                        if (!questsResult.data.elite) {
+                            questsResult.data.elite = {
+                                success: true,
+                                quest_count: eliteQuestsResult.data.assigned_quests.length,
+                                quests: []
+                            };
+                        }
+                        
+                        // Add elite quests to the result
+                        questsResult.data.elite.quests = eliteQuestsResult.data.assigned_quests.map(quest => ({
+                            quest_id: quest.quest_id,
+                            title: quest.title,
+                            description: quest.description
+                        }));
+                    }
+                }
+            } catch (eliteError) {
+                console.error('Error assigning elite quests during login:', eliteError);
+                // Don't fail the login if elite quests assignment fails
+            }
+        }
+        
         return {
             success: true,
             message: isNewUser ? 'New user created and logged in' : 'User logged in successfully',
@@ -110,7 +143,8 @@ async function login(userId, userName, additionalData = {}) {
                 goldCoins: user.gold_coins,
                 login_time: user.login_time,
                 fcmToken: user.fcmToken ? true : null, // Just indicate if token exists, don't return the actual token
-                quests: questsResult.data // Include assigned quests in response
+                quests: questsResult.data, // Include assigned quests in response
+                has_elite_pass: user.elite_pass && user.elite_pass.active ? true : false
             }
         };
     } catch (error) {

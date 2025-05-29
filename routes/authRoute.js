@@ -1,35 +1,104 @@
 const express = require('express');
 const router = express.Router();
 const authService = require('../service/authService');
+const logService = require('../service/logService');
 
 /**
  * @route POST /api/auth/login/:userId
- * @desc Log in a user or create a new account
+ * @desc Login a user, creating them if they don't exist
  * @access Public
  */
 router.post('/login/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { userName, deviceInfo, fcmToken } = req.body;
-
+        const { userName, fcmToken, deviceInfo, additionalData } = req.body;
+        
         if (!userId) {
             return res.status(400).json({
                 success: false,
                 message: 'User ID is required'
             });
         }
-
+        
+        // Get IP address for logging
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        
+        // Call the auth service login function
         const result = await authService.login(userId, userName, {
+            fcmToken,
             deviceInfo,
-            fcmToken
+            ip,
+            ...additionalData
         });
-
-        res.status(200).json(result);
+        
+        // If the login was successful, check for elite pass and get quests
+        if (result.success) {
+            // The authService now handles elite quest assignment
+            
+            // Log login for analytics
+            await logService.logAuthEvent('USER_LOGIN', userId, {
+                userName: result.userData.userName,
+                isNewUser: result.isNewUser,
+                hasElitePass: result.userData.has_elite_pass
+            });
+        }
+        
+        res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         console.error('Error in login route:', error);
         res.status(500).json({
             success: false,
-            message: 'Error during login process',
+            message: 'Login failed',
+            error: error.message
+        });
+    }
+});
+
+/**
+ * @route POST /api/auth/login
+ * @desc Login a user with userId in request body
+ * @access Public
+ */
+router.post('/login', async (req, res) => {
+    try {
+        const { userId, userName, fcmToken, deviceInfo, additionalData } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+        
+        // Get IP address for logging
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        
+        // Call the auth service login function
+        const result = await authService.login(userId, userName, {
+            fcmToken,
+            deviceInfo,
+            ip,
+            ...additionalData
+        });
+        
+        // If the login was successful, check for elite pass and get quests
+        if (result.success) {
+            // The authService now handles elite quest assignment
+            
+            // Log login for analytics
+            await logService.logAuthEvent('USER_LOGIN', userId, {
+                userName: result.userData.userName,
+                isNewUser: result.isNewUser,
+                hasElitePass: result.userData.has_elite_pass
+            });
+        }
+        
+        res.status(result.success ? 200 : 400).json(result);
+    } catch (error) {
+        console.error('Error in login route:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Login failed',
             error: error.message
         });
     }

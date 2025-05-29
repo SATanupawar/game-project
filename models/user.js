@@ -238,11 +238,49 @@ const battlePassSummarySchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    completed_levels: {
+        count: {
+            type: Number,
+            default: 0
+        },
+        levels: [{
+            type: Number
+        }],
+        total_xp_earned: {
+            type: Number,
+            default: 0
+        }
+    },
+    current_level_progress: {
+        xp_required: {
+            type: Number,
+            default: 0
+        },
+        xp_earned: {
+            type: Number,
+            default: 0
+        },
+        xp_remaining: {
+            type: Number,
+            default: 0
+        },
+        progress_percentage: {
+            type: Number,
+            default: 0
+        }
+    },
     claimed_rewards: [{
         level: Number,
         is_elite: Boolean,
         reward_type: String,
         claim_date: Date
+    }],
+    last_collected_level: {
+        type: Number,
+        default: 0
+    },
+    uncollected_rewards: [{
+        type: Number
     }],
     battle_pass_id: {
         type: mongoose.Schema.Types.ObjectId,
@@ -253,6 +291,73 @@ const battlePassSummarySchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
+}, { _id: false });
+
+// Define schema for active merges
+const activeMergeSchema = new mongoose.Schema({
+    creature1_id: {
+        type: String,
+        required: true
+    },
+    creature2_id: {
+        type: String,
+        required: true
+    },
+    start_time: {
+        type: Date,
+        default: Date.now
+    },
+    estimated_finish_time: {
+        type: Date,
+        required: true
+    },
+    progress: {
+        type: Number,
+        default: 50
+    },
+    last_update: {
+        type: Date,
+        default: Date.now
+    }
+}, { _id: false });
+
+// Define schema for merging history
+const mergingHistorySchema = new mongoose.Schema({
+    creature1_id: {
+        type: String,
+        required: true
+    },
+    creature1_name: String,
+    creature1_level: Number,
+    creature2_id: {
+        type: String,
+        required: true
+    },
+    creature2_name: String,
+    creature2_level: Number,
+    start_time: {
+        type: Date,
+        default: Date.now
+    },
+    completion_time: Date,
+    estimated_finish_time: Date,
+    target_level: Number,
+    progress: {
+        type: Number,
+        default: 0
+    },
+    is_complete: {
+        type: Boolean,
+        default: false
+    },
+    rarity: String,
+    wait_time_minutes: Number,
+    anima_spent: Number,
+    total_anima_spent: Number,
+    current_step: Number,
+    required_steps: Number,
+    result_creature_id: String,
+    last_update: Date
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -630,6 +735,10 @@ const userSchema = new mongoose.Schema({
             default: Date.now
         }
     }],
+    // Add merging history and active merges tracking
+    merging_history: [mergingHistorySchema],
+    active_merges: [activeMergeSchema],
+    
     // Elite Pass information
     elite_pass: {
         active: {
@@ -645,6 +754,47 @@ const userSchema = new mongoose.Schema({
             default: null
         }
     },
+    // Subscription history to store all subscription details
+    subscription_history: [{
+        type: {
+            type: String,
+            enum: ['monthly', 'quarterly', 'yearly'],
+            required: true
+        },
+        start_date: {
+            type: Date,
+            required: true
+        },
+        end_date: {
+            type: Date,
+            required: true
+        },
+        price: {
+            type: Number,
+            required: true
+        },
+        status: {
+            type: String,
+            enum: ['active', 'expired', 'cancelled'],
+            default: 'active'
+        },
+        elite_pass: {
+            active: Boolean,
+            start_date: Date,
+            end_date: Date
+        },
+        battle_pass: {
+            name: String,
+            is_elite: Boolean,
+            current_level: Number,
+            start_date: Date,
+            end_date: Date
+        },
+        created_at: {
+            type: Date,
+            default: Date.now
+        }
+    }],
     // Elite quest statistics
     elite_quest_stats: {
         completed: {

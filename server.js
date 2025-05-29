@@ -50,6 +50,7 @@ const leaderboardRoutes = require('./routes/leaderboardRoute');
 const battlePassRoutes = require('./routes/battlePassRoute');
 const subscriptionRoutes = require('./routes/subscriptionRoute');
 const battlePassProgressRoutes = require('./routes/battlePassProgressRoute');
+const subscriptionService = require('./service/subscriptionService');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -91,12 +92,12 @@ app.use('/api/card-packs', cardPackRoutes);
 app.use('/api/building-decorations', buildingDecorationRoutes);
 app.use('/api/chests', chestRoutes);
 app.use('/api/arcane-energy', arcaneEnergyRoutes);
-app.use('/api/push-notifications', pushNotificationRoutes);
+app.use('/api/notifications', pushNotificationRoutes);
 
 // Add to your routes
-app.use('/api', leaderboardRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api', battlePassRoutes);
-app.use('/api', subscriptionRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', battlePassProgressRoutes);
 
 // Direct creature purchase route to bypass any conflicts with userRoutes

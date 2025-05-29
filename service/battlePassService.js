@@ -196,6 +196,7 @@ async function getUserBattlePassProgress(userId) {
 
         return {
             success: true,
+            message: 'Battle Pass progress retrieved successfully',
             data: {
                 battle_pass: {
                     _id: battlePass._id,
@@ -209,6 +210,7 @@ async function getUserBattlePassProgress(userId) {
                     current_xp: userBattlePass.current_xp,
                     current_level: userBattlePass.current_level,
                     is_elite: userBattlePass.is_elite,
+                    last_collected_level: userBattlePass.last_collected_level || 0,
                     xp_to_next_level: xpToNextLevel,
                     total_xp_for_current_level: totalXpForCurrentLevel,
                     claimed_rewards: userBattlePass.claimed_rewards,
@@ -227,6 +229,63 @@ async function getUserBattlePassProgress(userId) {
         };
     }
 }
+
+// Calculate completed levels and current level progress
+const calculateBattlePassProgress = async (userBattlePass, battlePass) => {
+    const currentLevel = userBattlePass.current_level;
+    const currentXP = userBattlePass.current_xp;
+    
+    // Calculate completed levels
+    const completedLevels = [];
+    let totalXpForCompletedLevels = 0;
+    
+    for (let level = 1; level < currentLevel; level++) {
+        completedLevels.push(level);
+        
+        // Find the XP requirement for this level
+        const xpRequirement = battlePass.xp_requirements.find(
+            req => level >= req.level_start && level <= req.level_end
+        );
+        
+        if (xpRequirement) {
+            totalXpForCompletedLevels += xpRequirement.xp_required;
+        }
+    }
+    
+    // Calculate current level progress
+    const currentLevelXpReq = battlePass.xp_requirements.find(
+        req => currentLevel >= req.level_start && currentLevel <= req.level_end
+    );
+    
+    const xpRequired = currentLevelXpReq ? currentLevelXpReq.xp_required : 0;
+    const xpEarned = currentXP - totalXpForCompletedLevels;
+    const xpRemaining = Math.max(0, xpRequired - xpEarned);
+    const progressPercentage = xpRequired > 0 ? Math.min(100, Math.floor((xpEarned / xpRequired) * 100)) : 0;
+    
+    // Get uncollected rewards
+    const unclaimedRewards = [];
+    for (let level = 1; level < currentLevel; level++) {
+        const claimed = userBattlePass.claimed_rewards.some(r => r.level === level);
+        if (!claimed) {
+            unclaimedRewards.push(level);
+        }
+    }
+    
+    return {
+        completed_levels: {
+            count: completedLevels.length,
+            levels: completedLevels,
+            total_xp_earned: totalXpForCompletedLevels
+        },
+        current_level_progress: {
+            xp_required: xpRequired,
+            xp_earned: xpEarned,
+            xp_remaining: xpRemaining,
+            progress_percentage: progressPercentage
+        },
+        uncollected_rewards: unclaimedRewards
+    };
+};
 
 /**
  * Add XP to a user's Battle Pass
@@ -316,6 +375,9 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
             }
         }
 
+        // Calculate battle pass progress details
+        const progressDetails = await calculateBattlePassProgress(userBattlePass, battlePass);
+
         // Update user's battle pass summary
         if (!user.battlePassSummary) {
             user.battlePassSummary = {};
@@ -325,7 +387,11 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
             current_level: userBattlePass.current_level,
             current_xp: userBattlePass.current_xp,
             is_elite: userBattlePass.is_elite,
+            completed_levels: progressDetails.completed_levels,
+            current_level_progress: progressDetails.current_level_progress,
             claimed_rewards: userBattlePass.claimed_rewards || [],
+            last_collected_level: userBattlePass.last_collected_level || 0,
+            uncollected_rewards: progressDetails.uncollected_rewards,
             battle_pass_id: battlePass._id,
             battle_pass_name: battlePass.name,
             last_updated: new Date()
@@ -484,6 +550,9 @@ async function claimBattlePassReward(userId, level, isElite) {
             if (reward.reward_type === 'creature') user.markModified('creature_inventory');
             if (reward.reward_type === 'decoration') user.markModified('decorations');
             
+            // Calculate battle pass progress details
+            const progressDetails = await calculateBattlePassProgress(userBattlePass, battlePass);
+            
             // Update user's battle pass summary with the latest claimed rewards
             if (!user.battlePassSummary) {
                 user.battlePassSummary = {};
@@ -493,7 +562,11 @@ async function claimBattlePassReward(userId, level, isElite) {
                 current_level: userBattlePass.current_level,
                 current_xp: userBattlePass.current_xp,
                 is_elite: userBattlePass.is_elite,
+                completed_levels: progressDetails.completed_levels,
+                current_level_progress: progressDetails.current_level_progress,
                 claimed_rewards: userBattlePass.claimed_rewards || [],
+                last_collected_level: userBattlePass.last_collected_level || 0,
+                uncollected_rewards: progressDetails.uncollected_rewards,
                 battle_pass_id: battlePass._id,
                 battle_pass_name: battlePass.name,
                 last_updated: new Date()
@@ -516,6 +589,13 @@ async function claimBattlePassReward(userId, level, isElite) {
                         current_xp: userBattlePass.current_xp,
                         xp_deducted: (userBattlePass.xp_history && userBattlePass.xp_history.length > 0 ? 
                             Math.abs(userBattlePass.xp_history[userBattlePass.xp_history.length - 1].amount) : 0)
+                    },
+                    battle_pass: {
+                        current_level: userBattlePass.current_level,
+                        last_collected_level: userBattlePass.last_collected_level || 0,
+                        completed_levels: progressDetails.completed_levels,
+                        current_level_progress: progressDetails.current_level_progress,
+                        uncollected_rewards: progressDetails.uncollected_rewards
                     }
                 }
             };
@@ -647,18 +727,29 @@ async function syncUserBattlePassSummary(userId) {
                 current_level: 0,
                 current_xp: 0,
                 is_elite: user.elite_pass && user.elite_pass.active,
+                completed_levels: { count: 0, levels: [], total_xp_earned: 0 },
+                current_level_progress: { xp_required: 0, xp_earned: 0, xp_remaining: 0, progress_percentage: 0 },
                 claimed_rewards: [],
+                last_collected_level: 0,
+                uncollected_rewards: [],
                 battle_pass_id: battlePass._id,
                 battle_pass_name: battlePass.name,
                 last_updated: new Date()
             };
         } else {
+            // Calculate battle pass progress details
+            const progressDetails = await calculateBattlePassProgress(userBattlePass, battlePass);
+            
             // Update user's battle pass summary
             user.battlePassSummary = {
                 current_level: userBattlePass.current_level,
                 current_xp: userBattlePass.current_xp,
                 is_elite: userBattlePass.is_elite,
+                completed_levels: progressDetails.completed_levels,
+                current_level_progress: progressDetails.current_level_progress,
                 claimed_rewards: userBattlePass.claimed_rewards || [],
+                last_collected_level: userBattlePass.last_collected_level || 0,
+                uncollected_rewards: progressDetails.uncollected_rewards,
                 battle_pass_id: battlePass._id,
                 battle_pass_name: battlePass.name,
                 last_updated: new Date()

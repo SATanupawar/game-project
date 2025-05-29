@@ -24,6 +24,10 @@ const userBattlePassSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    last_collected_level: {
+        type: Number,
+        default: 0
+    },
     claimed_rewards: [{
         level: Number,
         reward_type: String,
@@ -98,18 +102,25 @@ userBattlePassSchema.methods.updateLevel = async function() {
         
         if (!xpRequirement) continue;
         
+        // Add the XP needed for this level
+        const xpForThisLevel = xpRequirement.xp_required;
+        
         // If current XP is less than needed for this level, we've found our level
-        if (this.current_xp < totalXpNeeded + xpRequirement.xp_required) {
+        if (this.current_xp < totalXpNeeded + xpForThisLevel) {
             newLevel = level;
             break;
         }
         
-        // Add the XP for this level
-        totalXpNeeded += xpRequirement.xp_required;
+        // Add the XP for this level to the running total
+        totalXpNeeded += xpForThisLevel;
+        
+        // Update level since we've passed this level's XP requirement
+        newLevel = level + 1;
         
         // If we've reached the max level, stop
         if (level === battlePass.max_level) {
             newLevel = battlePass.max_level;
+            break;
         }
     }
     
@@ -196,6 +207,11 @@ userBattlePassSchema.methods.claimReward = async function(level, isElite) {
         is_elite: isElite,
         claim_date: new Date()
     });
+    
+    // Update last collected level if this level is higher
+    if (level > this.last_collected_level) {
+        this.last_collected_level = level;
+    }
     
     // Update timestamp
     this.updated_at = new Date();

@@ -421,14 +421,19 @@ async function getUserQuests(userId) {
                 rewarded: userQuest.rewarded,
                 expires_at: userQuest.expires_at,
                 reward_type: questDetails.reward_type || 'unknown',
-                reward_amount: questDetails.reward_amount || 0
+                reward_amount: questDetails.reward_amount || 0,
+                is_elite: questDetails.is_elite || false
             };
         });
         
         // Group by type
-        const dailyQuests = activeQuests.filter(q => q.type === 'daily');
-        const weeklyQuests = activeQuests.filter(q => q.type === 'weekly');
-        const monthlyQuests = activeQuests.filter(q => q.type === 'monthly');
+        const dailyQuests = activeQuests.filter(q => q.type === 'daily' && !q.is_elite);
+        const weeklyQuests = activeQuests.filter(q => q.type === 'weekly' && !q.is_elite);
+        const monthlyQuests = activeQuests.filter(q => q.type === 'monthly' && !q.is_elite);
+        const eliteQuests = activeQuests.filter(q => q.is_elite);
+        
+        // Check if user has elite pass
+        const hasElitePass = user.elite_pass && user.elite_pass.active;
         
         return {
             success: true,
@@ -437,14 +442,19 @@ async function getUserQuests(userId) {
                 daily_quests: dailyQuests,
                 weekly_quests: weeklyQuests,
                 monthly_quests: monthlyQuests,
+                elite_quests: hasElitePass ? eliteQuests : [],
                 quest_stats: user.quest_stats,
+                elite_quest_stats: user.elite_quest_stats || null,
+                has_elite_pass: hasElitePass,
                 daily_refresh: user.quest_stats.last_daily_refresh,
                 weekly_refresh: user.quest_stats.last_weekly_refresh,
                 monthly_refresh: user.quest_stats.last_monthly_refresh,
+                elite_refresh: user.elite_quest_stats?.last_refresh || null,
                 replacements: {
                     daily: user.quest_stats.daily_replacements || 0,
                     weekly: user.quest_stats.weekly_replacements || 0,
                     monthly: user.quest_stats.monthly_replacements || 0,
+                    elite: user.elite_quest_stats?.replacements || 0,
                     total: user.quest_stats.total_replacements || 0
                 },
                 recent_replacements: user.replaced_quests ? 

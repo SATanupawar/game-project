@@ -398,16 +398,161 @@ async function mergeCreatures(userId, creature1Id, creature2Id) {
         }
 
         // Get the base creature data for stats calculation
-        const baseCreature = await Creature.findOne({ creature_Id: creature1.creature_type });
+        console.log(`Attempting to merge creatures:`, {
+            creature1: {
+                id: creature1._id,
+                name: creature1.name,
+                type: creature1.creature_type,
+                reference: creature1.creature_Id_reference
+            },
+            creature2: {
+                id: creature2._id,
+                name: creature2.name, 
+                type: creature2.creature_type,
+                reference: creature2.creature_Id_reference
+            }
+        });
+
+        // Try multiple ways to find the correct creature template
+        let baseCreature = null;
+        
+        // Try by creature_Id_reference first (most reliable)
+        if (creature1.creature_Id_reference) {
+            console.log(`Looking up creature template by creature_Id_reference: ${creature1.creature_Id_reference}`);
+            baseCreature = await Creature.findOne({ creature_Id: creature1.creature_Id_reference });
+        }
+        
+        // If not found, try by creature_id
+        if (!baseCreature && creature1.creature_id) {
+            console.log(`Looking up creature template by creature_id: ${creature1.creature_id}`);
+            baseCreature = await Creature.findOne({ _id: creature1.creature_id });
+        }
+        
+        // If still not found, try by name
+        if (!baseCreature && creature1.name) {
+            console.log(`Looking up creature template by name: ${creature1.name}`);
+            baseCreature = await Creature.findOne({ name: creature1.name });
+        }
+        
+        // Last resort, try by creature_type
         if (!baseCreature) {
+            console.log(`Looking up creature template by creature_type: ${creature1.creature_type}`);
+            baseCreature = await Creature.findOne({ creature_type: creature1.creature_type });
+        }
+        
+        // If still not found, try with a direct MongoDB query to see what's available
+        if (!baseCreature) {
+            console.log(`Failed to find creature template. Checking available templates...`);
+            const allTemplates = await Creature.find({}, 'creature_Id name type creature_type');
+            console.log(`Available templates:`, allTemplates.map(t => ({
+                id: t._id,
+                creature_Id: t.creature_Id,
+                name: t.name, 
+                type: t.type,
+                creature_type: t.creature_type
+            })));
+            
             return {
                 success: false,
-                message: 'Base creature data not found'
+                message: `Creature template not found for ${creature1.name} (${creature1.creature_Id_reference || creature1.creature_type})`,
+                debug: {
+                    searched: {
+                        by_reference: creature1.creature_Id_reference,
+                        by_id: creature1.creature_id,
+                        by_name: creature1.name,
+                        by_type: creature1.creature_type
+                    },
+                    available_templates: allTemplates.map(t => t.creature_Id)
+                }
             };
         }
+        
+        console.log(`Found creature template:`, {
+            id: baseCreature._id,
+            creature_Id: baseCreature.creature_Id,
+            name: baseCreature.name
+        });
 
         // Calculate new level stats
         const newLevel = creature1.level + 1;
+        
+        // Check if template has getStatsForLevel method
+        if (typeof baseCreature.getStatsForLevel !== 'function') {
+            console.log(`Template missing getStatsForLevel method. Using level_stats array directly.`);
+            
+            // Find stats for this level in the level_stats array
+            let newStats = {
+                attack: creature1.base_attack || creature1.attack,
+                health: creature1.base_health || creature1.health,
+                gold_coins: baseCreature.gold_coins || creature1.gold_coins || 0,
+                arcane_energy: baseCreature.arcane_energy || creature1.arcane_energy || 0
+            };
+            
+            if (baseCreature.level_stats && Array.isArray(baseCreature.level_stats)) {
+                const levelStats = baseCreature.level_stats.find(ls => ls.level === newLevel);
+                if (levelStats) {
+                    console.log(`Found level ${newLevel} stats:`, levelStats);
+                    newStats.attack = levelStats.attack || newStats.attack;
+                    newStats.health = levelStats.health || newStats.health;
+                    newStats.gold = levelStats.gold || newStats.gold_coins;
+                    newStats.arcane_energy = levelStats.arcane_energy || newStats.arcane_energy;
+                } else {
+                    console.log(`No level ${newLevel} stats found in template.`);
+                }
+            } else {
+                console.log(`No level_stats array found in template.`);
+            }
+            
+            // Create the merged creature
+            const mergedCreature = {
+                creature_id: creature1.creature_id,
+                name: creature1.name,
+                level: newLevel,
+                building_index: creature1.building_index,
+                creature_type: creature1.creature_type,
+                creature_Id_reference: creature1.creature_Id_reference,
+                base_attack: creature1.base_attack || newStats.attack,
+                base_health: creature1.base_health || newStats.health,
+                attack: newStats.attack,
+                health: newStats.health,
+                gold_coins: newStats.gold || newStats.gold_coins,
+                arcane_energy: newStats.arcane_energy,
+                count: 1,
+                // Copy other properties from original creature
+                critical_damage: creature1.critical_damage,
+                critical_damage_percentage: creature1.critical_damage_percentage,
+                armor: creature1.armor,
+                speed: creature1.speed,
+                image: creature1.image,
+                description: creature1.description
+            };
+            
+            // Remove both original creatures
+            user.creatures.splice(Math.max(creature1Index, creature2Index), 1);
+            user.creatures.splice(Math.min(creature1Index, creature2Index), 1);
+            
+            // Add the merged creature
+            user.creatures.push(mergedCreature);
+            
+            // Save changes
+            user.markModified('creatures');
+            await user.save();
+            
+            return {
+                success: true,
+                message: `Successfully merged creatures to level ${newLevel}`,
+                data: {
+                    merged_creature: mergedCreature,
+                    previous_level: creature1.level,
+                    new_level: newLevel,
+                    stats_increase: {
+                        attack: newStats.attack - creature1.attack,
+                        health: newStats.health - creature1.health
+                    }
+                }
+            };
+        }
+        
         const newStats = baseCreature.getStatsForLevel(newLevel);
 
         // Create the merged creature
@@ -417,12 +562,21 @@ async function mergeCreatures(userId, creature1Id, creature2Id) {
             level: newLevel,
             building_index: creature1.building_index,
             creature_type: creature1.creature_type,
+            creature_Id_reference: creature1.creature_Id_reference,
             base_attack: newStats.attack,
             base_health: newStats.health,
             attack: newStats.attack,
             health: newStats.health,
             gold_coins: creature1.gold_coins,
-            count: 1
+            arcane_energy: newStats.arcane_energy,
+            count: 1,
+            // Copy other properties from original creature
+            critical_damage: creature1.critical_damage,
+            critical_damage_percentage: creature1.critical_damage_percentage,
+            armor: creature1.armor,
+            speed: creature1.speed,
+            image: creature1.image,
+            description: creature1.description
         };
 
         // Remove both original creatures
