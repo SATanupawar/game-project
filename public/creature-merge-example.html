@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creature Merge Example</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 800px;
+            margin-top: 50px;
+        }
+        .creature-card {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .progress {
+            height: 25px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Creature Merge System</h1>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="creature-card">
+                    <h4>Creature 1</h4>
+                    <p>ID: <span id="creature1-id">68392550bae45299eb99ae1c</span></p>
+                    <p>Type: <span id="creature1-type">Common</span></p>
+                    <p>Level: <span id="creature1-level">10</span></p>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="creature-card">
+                    <h4>Creature 2</h4>
+                    <p>ID: <span id="creature2-id">6839254abae45299eb99ae0f</span></p>
+                    <p>Type: <span id="creature2-type">Common</span></p>
+                    <p>Level: <span id="creature2-level">10</span></p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h3>User ID: <span id="user-id">user8</span></h3>
+        </div>
+        
+        <div class="mb-4">
+            <h3>Merge Progress</h3>
+            <div class="progress mb-2">
+                <div id="merge-progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    <span id="merge-progress-text">0%</span>
+                </div>
+            </div>
+            <p id="merge-status-message" class="text-center">Ready to start merge process</p>
+        </div>
+        
+        <div class="d-grid gap-2">
+            <button id="start-merge-btn" class="btn btn-primary">Start Merge</button>
+            <button id="check-progress-btn" class="btn btn-info">Check Progress</button>
+            <button id="collect-merge-btn" class="btn btn-success">Collect Merge</button>
+        </div>
+        
+        <div class="mt-4">
+            <h3>Result</h3>
+            <pre id="result-container" class="bg-light p-3">No result yet</pre>
+        </div>
+    </div>
+
+    <script src="js/upgrade-timer.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const userId = document.getElementById('user-id').textContent;
+            const creature1Id = document.getElementById('creature1-id').textContent;
+            const creature2Id = document.getElementById('creature2-id').textContent;
+            
+            const startMergeBtn = document.getElementById('start-merge-btn');
+            const checkProgressBtn = document.getElementById('check-progress-btn');
+            const collectMergeBtn = document.getElementById('collect-merge-btn');
+            const resultContainer = document.getElementById('result-container');
+            
+            // Start merge process
+            startMergeBtn.addEventListener('click', async function() {
+                try {
+                    startMergeBtn.disabled = true;
+                    resultContainer.textContent = 'Starting merge process...';
+                    
+                    const result = await window.creatureMerge.startMergeProcess(userId, creature1Id, creature2Id);
+                    resultContainer.textContent = JSON.stringify(result, null, 2);
+                    
+                    startMergeBtn.disabled = false;
+                } catch (error) {
+                    resultContainer.textContent = `Error: ${error.message}`;
+                    startMergeBtn.disabled = false;
+                }
+            });
+            
+            // Check merge progress
+            checkProgressBtn.addEventListener('click', async function() {
+                try {
+                    checkProgressBtn.disabled = true;
+                    resultContainer.textContent = 'Checking progress...';
+                    
+                    const result = await window.creatureMerge.checkMergeProgress(userId, creature1Id, creature2Id);
+                    resultContainer.textContent = JSON.stringify(result, null, 2);
+                    
+                    checkProgressBtn.disabled = false;
+                } catch (error) {
+                    resultContainer.textContent = `Error: ${error.message}`;
+                    checkProgressBtn.disabled = false;
+                }
+            });
+            
+            // Collect completed merge
+            collectMergeBtn.addEventListener('click', async function() {
+                try {
+                    collectMergeBtn.disabled = true;
+                    resultContainer.textContent = 'Collecting merge...';
+                    
+                    const result = await window.creatureMerge.collectCompletedMerge(userId, creature1Id, creature2Id);
+                    resultContainer.textContent = JSON.stringify(result, null, 2);
+                    
+                    collectMergeBtn.disabled = false;
+                } catch (error) {
+                    resultContainer.textContent = `Error: ${error.message}`;
+                    collectMergeBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

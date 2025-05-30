@@ -938,6 +938,18 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         const isThirdClick = clickCount === 3;
         const isFourthClick = clickCount === 4;
 
+        // Calculate animaCost based on rarity and click count
+        let animaCost;
+        if (creatureTemplate.type === 'rare') {
+            if (isSecondClick || isThirdClick || isFourthClick) {
+                animaCost = secondClickAnima;
+            } else {
+                animaCost = requiredAnima;
+            }
+        } else {
+            animaCost = isSecondClick ? secondClickAnima : requiredAnima;
+        }
+
         // Check if these creatures are already partnered for upgrade
         const creature1PartnerId = user.creatures[creature1Index].upgrade_partner_id;
         const creature2PartnerId = user.creatures[creature2Index].upgrade_partner_id;
@@ -1167,22 +1179,13 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
                 now
             });
 
-            if (timeSinceLastClick < requiredWaitTimeSeconds) {
-                const remainingSeconds = Math.ceil(requiredWaitTimeSeconds - timeSinceLastClick);
-                const remainingMinutes = Math.floor(remainingSeconds / 60);
-                const remainingSecondsFormatted = remainingSeconds % 60;
-                
-                return res.status(400).json({
-                    success: false,
-                    message: `Please wait ${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')} before clicking again.`,
-                    remaining_time: `${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')}`,
-                    progress: {
-                        current: Math.floor((timeSinceLastClick / requiredWaitTimeSeconds) * 100),
-                        total: 100,
-                        percentage: `${Math.floor((timeSinceLastClick / requiredWaitTimeSeconds) * 100)}%`
-                    }
-                });
-            }
+            // For common creatures, we'll skip the timer on second click
+            // Just proceed with completing the upgrade
+            console.log('Common creature: skipping timer check on second click and proceeding to completion');
+            
+            // Update progress to 100% to complete the merge
+            user.creatures[creature1Index].upgrade_progress = 100;
+            user.creatures[creature2Index].upgrade_progress = 100;
         }
         // For Epic type creatures, check time requirements between clicks
         else if (creatureTemplate.type === 'epic') {
@@ -1537,7 +1540,7 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         await user.save();
 
         // Calculate required anima based on click
-        let animaCost;
+        // Note: animaCost is already declared above - we're just updating its value here
         if (creatureTemplate.type === 'rare') {
             if (isSecondClick) animaCost = secondClickAnima;
             else if (isThirdClick) animaCost = secondClickAnima;
@@ -2273,7 +2276,6 @@ router.post('/:userId/reset-upgrade', async (req, res) => {
     try {
         const { userId } = req.params;
         const { creature1Id, creature2Id } = req.body;
-
         if (!userId) {
             return res.status(400).json({
                 success: false,
@@ -2913,3 +2915,4 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
 });
 
 module.exports = router;
+

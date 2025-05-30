@@ -4488,20 +4488,43 @@ async function assignCreatureToBuilding(userId, creatureId, buildingIndex) {
         // Check if there are already creatures in this building
         const buildingCreatures = user.creatures.filter(c => c.building_index === parsedBuildingIndex);
         if (buildingCreatures.length > 0) {
-            // Get the type of creatures currently in the building
-            const existingType = buildingCreatures[0].creature_type?.toLowerCase();
-            const newCreatureType = user.creatures[creatureIndex].creature_type?.toLowerCase();
+            // Get the creature to assign
+            const newCreature = user.creatures[creatureIndex];
             
-            // If the types don't match, return an error
-            if (existingType && existingType !== newCreatureType) {
-                return {
-                    success: false,
-                    message: `This building already contains ${buildingCreatures[0].name} creatures. You can only assign creatures of the same type to this building.`,
-                    data: {
-                        existing_creature_type: existingType,
-                        new_creature_type: newCreatureType
-                    }
-                };
+            // Primary validation: Check creature_Id_reference first
+            if (newCreature.creature_Id_reference && buildingCreatures[0].creature_Id_reference) {
+                const existingReference = buildingCreatures[0].creature_Id_reference.toLowerCase();
+                const newReference = newCreature.creature_Id_reference.toLowerCase();
+                
+                // If references don't match, return error
+                if (existingReference !== newReference) {
+                    return {
+                        success: false,
+                        message: `This building already contains ${buildingCreatures[0].name} creatures. You can only assign creatures of the same type to this building.`,
+                        data: {
+                            existing_creature_reference: existingReference,
+                            new_creature_reference: newReference
+                        }
+                    };
+                }
+            } 
+            // Fallback validation: Check creature_type if creature_Id_reference is not available
+            else {
+                // Get the type of creatures currently in the building
+                const existingType = buildingCreatures[0].creature_type?.toLowerCase();
+                const newCreatureType = newCreature.creature_type?.toLowerCase();
+                
+                // If the types don't match, return an error
+                if (existingType && existingType !== newCreatureType) {
+                    return {
+                        success: false,
+                        message: `This building already contains ${buildingCreatures[0].name} creatures. You can only assign creatures of the same type to this building.`,
+                        data: {
+                            existing_creature_type: existingType,
+                            new_creature_type: newCreatureType
+                        }
+                    };
+                }
             }
         }
         

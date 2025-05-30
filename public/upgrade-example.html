@@ -75,10 +75,22 @@
             background-color: #f8f9fa;
             border-radius: 4px;
         }
+        .api-note {
+            background-color: #e9f5ff;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
     </style>
 </head>
 <body>
     <h1>Creature Upgrade Example</h1>
+    
+    <div class="api-note">
+        <p><strong>Note:</strong> This demo is using the real API at <code>http://13.234.138.208:5000/api/creatures/{userId}/upgrade-milestone</code></p>
+        <p>Common creatures require 2 clicks to complete, with the second click happening right after the first.</p>
+    </div>
     
     <div class="container">
         <h2>Merge Creatures</h2>
@@ -111,7 +123,7 @@
     </div>
     
     <!-- Load scripts -->
-    <script src="/js/upgrade-timer.js"></script>
+    <script src="js/upgrade-timer.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Handle upgrade form submission
