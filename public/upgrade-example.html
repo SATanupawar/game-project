@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creature Upgrade Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .progress {
+            height: 20px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #007bff;
+            color: white;
+            text-align: center;
+            line-height: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .timer-display {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Creature Upgrade Example</h1>
+    
+    <div class="container">
+        <h2>Merge Creatures</h2>
+        <form id="upgrade-form">
+            <div>
+                <label for="userId">User ID:</label>
+                <input type="text" id="userId" name="userId" required>
+            </div>
+            <div>
+                <label for="creature1Id">Creature 1 ID:</label>
+                <input type="text" id="creature1Id" name="creature1Id" required>
+            </div>
+            <div>
+                <label for="creature2Id">Creature 2 ID:</label>
+                <input type="text" id="creature2Id" name="creature2Id" required>
+            </div>
+            
+            <button type="submit">Upgrade Creatures</button>
+        </form>
+    </div>
+    
+    <div id="upgrade-message-container" style="display: none;"></div>
+    <div id="upgrade-response-container" style="display: none;"></div>
+    
+    <div class="container">
+        <h2>Active Timers</h2>
+        <div id="active-timers">
+            <p>No active timers</p>
+        </div>
+    </div>
+    
+    <!-- Load scripts -->
+    <script src="/js/upgrade-timer.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Handle upgrade form submission
+            document.getElementById('upgrade-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const userId = document.getElementById('userId').value;
+                const creature1Id = document.getElementById('creature1Id').value;
+                const creature2Id = document.getElementById('creature2Id').value;
+                
+                // Reset containers
+                document.getElementById('upgrade-message-container').style.display = 'none';
+                document.getElementById('upgrade-response-container').style.display = 'none';
+                
+                // Use our client-side validation before making API call
+                const result = await window.upgradeCreatures(userId, creature1Id, creature2Id);
+                if (result) {
+                    console.log('Upgrade result:', result);
+                    updateActiveTimers();
+                }
+            });
+            
+            // Update active timers display
+            function updateActiveTimers() {
+                const timerContainer = document.getElementById('active-timers');
+                const timers = upgradeTimer.timers;
+                const timerKeys = Object.keys(timers);
+                
+                if (timerKeys.length === 0) {
+                    timerContainer.innerHTML = '<p>No active timers</p>';
+                    return;
+                }
+                
+                let html = '';
+                timerKeys.forEach(key => {
+                    const timer = timers[key];
+                    const remainingTime = upgradeTimer.getFormattedRemainingTime(
+                        timer.userId, 
+                        timer.creature1Id, 
+                        timer.creature2Id
+                    );
+                    const progress = upgradeTimer.getProgressPercentage(
+                        timer.userId, 
+                        timer.creature1Id, 
+                        timer.creature2Id
+                    );
+                    
+                    html += `
+                        <div class="timer-display" data-timer="${key}">
+                            <h3>Upgrade in Progress</h3>
+                            <p>User: ${timer.userId}</p>
+                            <p>Creatures: ${timer.creature1Id} & ${timer.creature2Id}</p>
+                            <p>Remaining time: <span class="remaining-time">${remainingTime}</span></p>
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" style="width: ${progress}%;" 
+                                    aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100">
+                                    ${progress}%
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                timerContainer.innerHTML = html;
+            }
+            
+            // Update timer display every second
+            setInterval(updateActiveTimers, 1000);
+            
+            // Initial update
+            updateActiveTimers();
+        });
+    </script>
+</body>
+</html> 

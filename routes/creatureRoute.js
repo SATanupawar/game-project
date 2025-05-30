@@ -748,7 +748,31 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             });
         }
 
-        // Check if both creatures have an upgrade in progress and if enough time has elapsed
+        // Find creature template
+        let creatureTemplate = null;
+        
+        // Try multiple ways to find the template
+        if (creature1.creature_Id_reference) {
+            creatureTemplate = await Creature.findOne({ creature_Id: creature1.creature_Id_reference });
+        }
+        if (!creatureTemplate && creature1.name) {
+            creatureTemplate = await Creature.findOne({ name: creature1.name });
+        }
+        if (!creatureTemplate && creature1.creature_type) {
+            creatureTemplate = await Creature.findOne({ creature_type: creature1.creature_type });
+        }
+        if (!creatureTemplate && creature1.creature_id) {
+            creatureTemplate = await Creature.findOne({ _id: creature1.creature_id });
+        }
+        
+        if (!creatureTemplate) {
+            return res.status(404).json({
+                success: false,
+                message: `Creature template not found for ${creature1.name || creature1.creature_type}`
+            });
+        }
+
+        // Check if both creatures have an upgrade in progress
         if (creature1.upgrade_progress > 0 && creature2.upgrade_progress > 0 && 
             creature1.last_upgrade_click_time && creature2.last_upgrade_click_time) {
             
@@ -761,58 +785,45 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             const now = new Date();
             const timeSinceLastClick = (now - lastClickTime) / 1000; // in seconds
             
-            // Calculate required wait time based on level
-            const waitTimeMinutes = currentLevel === 10 ? 15 : currentLevel === 20 ? 30 : 60;
+            // Calculate required wait time based on level and creature type
+            let waitTimeMinutes;
+            
+            if (creatureTemplate.type === 'common') {
+                waitTimeMinutes = targetLevel === 11 ? 15 : targetLevel === 21 ? 30 : 60;
+            } else if (creatureTemplate.type === 'rare') {
+                waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
+            } else if (creatureTemplate.type === 'epic') {
+                waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
+            } else {
+                waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
+            }
+            
             const requiredWaitTimeSeconds = waitTimeMinutes * 60;
             
             if (timeSinceLastClick < requiredWaitTimeSeconds) {
-                // Not enough time has passed
+                // Not enough time has passed - immediately return error without processing further
                 const remainingSeconds = Math.ceil(requiredWaitTimeSeconds - timeSinceLastClick);
                 const remainingMinutes = Math.floor(remainingSeconds / 60);
                 const remainingSecondsFormatted = remainingSeconds % 60;
                 
                 // Calculate progress based on time elapsed
-                const timeProgress = Math.floor((timeSinceLastClick / requiredWaitTimeSeconds) * 50);
-                const progressPercentage = 50 + timeProgress;
-                
-                // Update both creatures with the current progress
-                user.creatures[creature1Index].upgrade_progress = progressPercentage;
-                user.creatures[creature2Index].upgrade_progress = progressPercentage;
-                user.markModified('creatures');
-                
-                // Update the merge history
-                const mergeHistory = ensureMergingHistory(user);
-                const existingMergeIndex = mergeHistory.findIndex(
-                    m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
-                         (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
-                );
-                
-                if (existingMergeIndex !== -1) {
-                    user.merging_history[existingMergeIndex].progress = progressPercentage;
-                    user.merging_history[existingMergeIndex].last_update = now;
-                    user.markModified('merging_history');
+                let initialProgress;
+                if (creatureTemplate.type === 'common') {
+                    initialProgress = 50;
+                } else if (creatureTemplate.type === 'rare') {
+                    initialProgress = 25;
+                } else if (creatureTemplate.type === 'epic') {
+                    initialProgress = 15;
+                } else {
+                    initialProgress = 10;
                 }
                 
-                // Update active_merges array
-                if (user.active_merges) {
-                    const activeMergeIndex = user.active_merges.findIndex(
-                        m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
-                             (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
-                    );
-                    
-                    if (activeMergeIndex !== -1) {
-                        user.active_merges[activeMergeIndex].progress = progressPercentage;
-                        user.active_merges[activeMergeIndex].last_update = now;
-                        user.markModified('active_merges');
-                    }
-                }
+                const timeProgress = Math.floor((timeSinceLastClick / requiredWaitTimeSeconds) * (100 - initialProgress));
+                const progressPercentage = initialProgress + timeProgress;
                 
-                await user.save();
-                
-                // Return error response with clear message
                 return res.status(400).json({
                     success: false,
-                    message: `You must wait the full time before completing the merge. Please wait ${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')} more.`,
+                    message: `Starting upgrade process. Please wait ${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')} before clicking again.`,
                     remaining_time: `${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')}`,
                     progress: {
                         current: progressPercentage,
@@ -820,13 +831,10 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
                         percentage: `${progressPercentage}%`
                     },
                     timing: {
-                        start_time: new Date(lastClickTime),
-                        current_time: now,
-                        estimated_finish_time: user.creatures[creature1Index].estimated_finish_time,
-                        time_elapsed_seconds: Math.floor(timeSinceLastClick),
-                        time_remaining_seconds: remainingSeconds
-                    },
-                    is_ready: false
+                        start_time: lastClickTime.toISOString(),
+                        estimated_finish_time: new Date(lastClickTime.getTime() + (requiredWaitTimeSeconds * 1000)).toISOString(),
+                        wait_time_minutes: waitTimeMinutes
+                    }
                 });
             }
             
@@ -836,71 +844,11 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             user.creatures[creature1Index].upgrade_progress = 100;
             user.creatures[creature2Index].upgrade_progress = 100;
         }
-
-        // Find the creature template to get rarity
-        console.log('Looking up creature template for:', {
-            creature_type: creature1.creature_type,
-            creature_id: creature1.creature_id,
-            creature_Id_reference: creature1.creature_Id_reference
-        });
         
-        // Try multiple ways to find the template
-        let creatureTemplate = null;
+        // Continue with existing code for upgrade process...
+        // (Rest of your existing upgrade code follows)
         
-        // Try by creature_Id_reference first (most reliable)
-        if (creature1.creature_Id_reference) {
-            console.log(`Looking up creature template by creature_Id_reference: ${creature1.creature_Id_reference}`);
-            creatureTemplate = await Creature.findOne({ creature_Id: creature1.creature_Id_reference });
-        }
-        
-        // If not found, try by name
-        if (!creatureTemplate && creature1.name) {
-            console.log(`Looking up creature template by name: ${creature1.name}`);
-            creatureTemplate = await Creature.findOne({ name: creature1.name });
-        }
-        
-        // If still not found, try by creature_type
-        if (!creatureTemplate) {
-            console.log(`Looking up creature template by creature_type: ${creature1.creature_type}`);
-            creatureTemplate = await Creature.findOne({ creature_type: creature1.creature_type });
-        }
-        
-        // Last resort, try by creature_id
-        if (!creatureTemplate && creature1.creature_id) {
-            console.log(`Looking up creature template by creature_id: ${creature1.creature_id}`);
-            creatureTemplate = await Creature.findOne({ _id: creature1.creature_id });
-        }
-        
-        console.log('Found creature template:', creatureTemplate);
-        
-        if (!creatureTemplate) {
-            return res.status(404).json({
-                success: false,
-                message: `Creature template not found for ${creature1.name || creature1.creature_type}`,
-                debug: {
-                    searched: {
-                        by_reference: creature1.creature_Id_reference,
-                        by_name: creature1.name,
-                        by_type: creature1.creature_type,
-                        by_id: creature1.creature_id
-                    },
-                    available_templates: await Creature.find({}, 'creature_Id name type').then(templates => 
-                        templates.map(t => ({ id: t._id, creature_Id: t.creature_Id, name: t.name }))
-                    )
-                }
-            });
-        }
-
-        // Validate creature rarity (using 'type' field instead of 'rarity')
-        const validRarities = ['common', 'rare', 'epic', 'legendary', 'elite'];
-        if (!creatureTemplate.type || !validRarities.includes(creatureTemplate.type)) {
-            return res.status(400).json({
-                success: false,
-                message: `Invalid creature rarity: ${creatureTemplate.type || 'undefined'}. Must be one of: ${validRarities.join(', ')}`
-            });
-        }
-
-        // Get stats for the target level (in template, stats for level N are stored with level N+1)
+        // Get stats for the target level
         const levelStats = creatureTemplate.level_stats.find(stat => stat.level === targetLevel);
         if (!levelStats) {
             return res.status(400).json({

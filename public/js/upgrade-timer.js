@@ -1,0 +1,353 @@
+/**
+ * Client-side timer validation for creature upgrade
+ * Prevents unnecessary API calls when the waiting time hasn't elapsed
+ */
+
+class UpgradeTimer {
+    constructor() {
+        this.timers = {};
+        this.loadFromStorage();
+        this.startTimerUpdates();
+    }
+
+    /**
+     * Load saved timers from localStorage
+     */
+    loadFromStorage() {
+        try {
+            const savedTimers = localStorage.getItem('creatureUpgradeTimers');
+            if (savedTimers) {
+                this.timers = JSON.parse(savedTimers);
+                // Convert string dates back to Date objects
+                Object.keys(this.timers).forEach(key => {
+                    if (this.timers[key].startTime) {
+                        this.timers[key].startTime = new Date(this.timers[key].startTime);
+                    }
+                    if (this.timers[key].finishTime) {
+                        this.timers[key].finishTime = new Date(this.timers[key].finishTime);
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading timers from storage:', error);
+            this.timers = {};
+        }
+    }
+
+    /**
+     * Save timers to localStorage
+     */
+    saveToStorage() {
+        try {
+            localStorage.setItem('creatureUpgradeTimers', JSON.stringify(this.timers));
+        } catch (error) {
+            console.error('Error saving timers to storage:', error);
+        }
+    }
+
+    /**
+     * Start a timer for creature upgrade
+     */
+    startTimer(userId, creature1Id, creature2Id, waitTimeMinutes, apiResponse) {
+        const key = this.getTimerKey(userId, creature1Id, creature2Id);
+        const now = new Date();
+        const finishTime = new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
+        
+        this.timers[key] = {
+            userId,
+            creature1Id,
+            creature2Id,
+            startTime: now,
+            finishTime: finishTime,
+            waitTimeMinutes,
+            initialResponse: apiResponse
+        };
+        
+        this.saveToStorage();
+        this.updateTimerUI(key);
+        
+        return this.timers[key];
+    }
+
+    /**
+     * Check if timer has completed
+     */
+    isTimerComplete(userId, creature1Id, creature2Id) {
+        const key = this.getTimerKey(userId, creature1Id, creature2Id);
+        const timer = this.timers[key];
+        
+        if (!timer) {
+            return true; // No timer found, allow API call
+        }
+        
+        const now = new Date();
+        return now >= timer.finishTime;
+    }
+
+    /**
+     * Get remaining time in seconds
+     */
+    getRemainingTime(userId, creature1Id, creature2Id) {
+        const key = this.getTimerKey(userId, creature1Id, creature2Id);
+        const timer = this.timers[key];
+        
+        if (!timer) {
+            return 0;
+        }
+        
+        const now = new Date();
+        const remainingMs = Math.max(0, timer.finishTime - now);
+        return Math.ceil(remainingMs / 1000);
+    }
+
+    /**
+     * Get formatted remaining time
+     */
+    getFormattedRemainingTime(userId, creature1Id, creature2Id) {
+        const remainingSeconds = this.getRemainingTime(userId, creature1Id, creature2Id);
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+        
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    /**
+     * Get progress percentage
+     */
+    getProgressPercentage(userId, creature1Id, creature2Id) {
+        const key = this.getTimerKey(userId, creature1Id, creature2Id);
+        const timer = this.timers[key];
+        
+        if (!timer) {
+            return 100;
+        }
+        
+        const now = new Date();
+        const totalDuration = timer.finishTime - timer.startTime;
+        const elapsed = now - timer.startTime;
+        
+        // Get initial progress based on creature type (from the API response)
+        let initialProgress = 50; // Default for common
+        if (timer.initialResponse && timer.initialResponse.progress) {
+            initialProgress = timer.initialResponse.progress.current;
+        }
+        
+        // Calculate progress percentage
+        const timeProgress = Math.floor((elapsed / totalDuration) * (100 - initialProgress));
+        const progress = Math.min(100, initialProgress + timeProgress);
+        
+        return progress;
+    }
+
+    /**
+     * Check if upgrade is ready and show message if not
+     * Returns true if the upgrade is ready, false otherwise
+     */
+    checkUpgradeReady(userId, creature1Id, creature2Id) {
+        if (this.isTimerComplete(userId, creature1Id, creature2Id)) {
+            return true;
+        }
+        
+        // Get timer data
+        const key = this.getTimerKey(userId, creature1Id, creature2Id);
+        const timer = this.timers[key];
+        
+        if (!timer) {
+            return true;
+        }
+        
+        // Timer not complete, show message
+        const remainingTime = this.getFormattedRemainingTime(userId, creature1Id, creature2Id);
+        const progress = this.getProgressPercentage(userId, creature1Id, creature2Id);
+        
+        // Create response object similar to what the API would return
+        const response = {
+            success: false,
+            message: `Starting upgrade process. Please wait ${remainingTime} before clicking again.`,
+            remaining_time: remainingTime,
+            progress: {
+                current: progress,
+                total: 100,
+                percentage: `${progress}%`
+            }
+        };
+        
+        // Show the message
+        this.showErrorMessage(response);
+        
+        return false;
+    }
+
+    /**
+     * Show error message - can be customized for your UI
+     */
+    showErrorMessage(response) {
+        console.log('Upgrade not ready:', response);
+        
+        // Example implementation - update with your actual UI code
+        const messageContainer = document.getElementById('upgrade-message-container');
+        if (messageContainer) {
+            messageContainer.innerHTML = `
+                <div class="alert alert-warning">
+                    <p>${response.message}</p>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: ${response.progress.percentage};" 
+                            aria-valuenow="${response.progress.current}" aria-valuemin="0" aria-valuemax="${response.progress.total}">
+                            ${response.progress.percentage}
+                        </div>
+                    </div>
+                </div>
+            `;
+            messageContainer.style.display = 'block';
+        }
+    }
+
+    /**
+     * Update timer UI elements periodically
+     */
+    updateTimerUI(timerKey) {
+        const timer = this.timers[timerKey];
+        if (!timer) return;
+        
+        const progressElement = document.querySelector(`[data-timer="${timerKey}"] .progress-bar`);
+        const timeElement = document.querySelector(`[data-timer="${timerKey}"] .remaining-time`);
+        
+        if (progressElement || timeElement) {
+            const remainingTime = this.getFormattedRemainingTime(timer.userId, timer.creature1Id, timer.creature2Id);
+            const progress = this.getProgressPercentage(timer.userId, timer.creature1Id, timer.creature2Id);
+            
+            if (progressElement) {
+                progressElement.style.width = `${progress}%`;
+                progressElement.setAttribute('aria-valuenow', progress);
+                progressElement.textContent = `${progress}%`;
+            }
+            
+            if (timeElement) {
+                timeElement.textContent = remainingTime;
+            }
+        }
+    }
+
+    /**
+     * Start periodic updates for all timers
+     */
+    startTimerUpdates() {
+        setInterval(() => {
+            Object.keys(this.timers).forEach(key => {
+                this.updateTimerUI(key);
+                
+                // Remove completed timers
+                if (this.isTimerComplete(
+                    this.timers[key].userId, 
+                    this.timers[key].creature1Id, 
+                    this.timers[key].creature2Id
+                )) {
+                    delete this.timers[key];
+                    this.saveToStorage();
+                }
+            });
+        }, 1000);
+    }
+
+    /**
+     * Process API response to start timer if needed
+     */
+    processApiResponse(userId, creature1Id, creature2Id, response) {
+        if (!response.success && response.timing && response.timing.wait_time_minutes) {
+            this.startTimer(
+                userId, 
+                creature1Id, 
+                creature2Id, 
+                response.timing.wait_time_minutes,
+                response
+            );
+        }
+        return response;
+    }
+
+    /**
+     * Create a unique key for the timer
+     */
+    getTimerKey(userId, creature1Id, creature2Id) {
+        return `${userId}_${creature1Id}_${creature2Id}`;
+    }
+}
+
+// Create global instance
+const upgradeTimer = new UpgradeTimer();
+
+/**
+ * Wrapper for the API call to upgrade creatures
+ * This checks if timer is complete before making the API call
+ */
+async function upgradeCreatures(userId, creature1Id, creature2Id) {
+    // Check if timer is complete before making API call
+    if (!upgradeTimer.checkUpgradeReady(userId, creature1Id, creature2Id)) {
+        return; // Don't make API call if timer not complete
+    }
+    
+    try {
+        // Make API call
+        const response = await fetch(`/api/creatures/${userId}/upgrade-milestone`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                creature1Id,
+                creature2Id
+            })
+        });
+        
+        const data = await response.json();
+        
+        // Process response to start timer if needed
+        upgradeTimer.processApiResponse(userId, creature1Id, creature2Id, data);
+        
+        // Update UI with response
+        updateResponseUI(data);
+        
+        return data;
+    } catch (error) {
+        console.error('Error upgrading creatures:', error);
+        return {
+            success: false,
+            message: 'Network error: Could not connect to server'
+        };
+    }
+}
+
+/**
+ * Update UI with API response
+ */
+function updateResponseUI(data) {
+    // Example implementation - update with your actual UI code
+    const responseContainer = document.getElementById('upgrade-response-container');
+    if (responseContainer) {
+        if (data.success) {
+            responseContainer.innerHTML = `
+                <div class="alert alert-success">
+                    <p>${data.message}</p>
+                </div>
+            `;
+        } else {
+            responseContainer.innerHTML = `
+                <div class="alert alert-warning">
+                    <p>${data.message}</p>
+                    ${data.progress ? `
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width: ${data.progress.percentage};" 
+                                aria-valuenow="${data.progress.current}" aria-valuemin="0" aria-valuemax="${data.progress.total}">
+                                ${data.progress.percentage}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        responseContainer.style.display = 'block';
+    }
+}
+
+// Export for global use
+window.upgradeCreatures = upgradeCreatures; 

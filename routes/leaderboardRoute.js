@@ -4,9 +4,10 @@ const User = require('../models/user');
 const redisWrapper = require('../service/redisService');
 
 // Update player score
-router.post('/player/update-score', async (req, res) => {
+router.post('/player/:userId/update-score', async (req, res) => {
   try {
-    const { userId, username, trophies } = req.body;
+    const { userId } = req.params;
+    const { trophies } = req.body;
     
     if (!userId || typeof trophies !== 'number') {
       return res.status(400).json({
@@ -37,8 +38,6 @@ router.post('/player/update-score', async (req, res) => {
     await User.findOneAndUpdate({ userId }, { 
       $set: { 
         trophy_count: newTotalTrophies,
-        // Store these extra fields for quicker leaderboard retrieval
-        user_name: username || user.user_name,
         last_trophy_update: new Date()
       } 
     });
@@ -51,7 +50,7 @@ router.post('/player/update-score', async (req, res) => {
     // Also store user data in a Redis hash for quick access
     await redisWrapper.client.hSet(`user:${userId}`, {
       userId,
-      username: username || user.user_name,
+      username: user.user_name || 'Unknown',
       trophies: newTotalTrophies.toString(),
       profilePicture: user.profile_picture || 'default.jpg',
       level: (user.level || 1).toString(),
@@ -383,6 +382,75 @@ router.get('/leaderboard/rank/:userId', async (req, res) => {
       error: error.message
     });
   }
+});
+
+// Get top players
+router.get('/top', async (req, res) => {
+    try {
+        const topUsers = await User.find()
+            .sort({ trophy_count: -1 })
+            .limit(10)
+            .select('userId user_name trophy_count profile_picture level title');
+        
+        res.status(200).json({
+            success: true,
+            data: topUsers.map((user, index) => ({
+                rank: index + 1,
+                userId: user.userId,
+                username: user.user_name || "Unknown",
+                trophies: user.trophy_count || 0,
+                profilePicture: user.profile_picture || "default.jpg",
+                level: user.level || 1,
+                title: user.title || ""
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get specific user rank
+router.get('/rank/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Count users with more trophies to determine rank
+        const higherRankedCount = await User.countDocuments({ 
+            trophy_count: { $gt: user.trophy_count } 
+        });
+        
+        const rank = higherRankedCount + 1; // Add 1 because ranks start at 1
+        
+        res.status(200).json({
+            success: true,
+            data: {
+                rank,
+                userId: user.userId,
+                username: user.user_name || "Unknown",
+                trophies: user.trophy_count || 0,
+                profilePicture: user.profile_picture || "default.jpg",
+                level: user.level || 1,
+                title: user.title || ""
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
 });
 
 module.exports = router;
