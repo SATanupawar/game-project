@@ -711,30 +711,30 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             });
         }
 
-        // Find creatures
+        // Find both creatures in user's creatures array
         const creature1Index = user.creatures.findIndex(c => c._id.toString() === creature1Id);
         const creature2Index = user.creatures.findIndex(c => c._id.toString() === creature2Id);
 
         if (creature1Index === -1 || creature2Index === -1) {
             return res.status(404).json({
                 success: false,
-                message: 'One or both creatures not found'
+                message: 'One or both creatures not found in user\'s creatures'
             });
         }
 
         const creature1 = user.creatures[creature1Index];
         const creature2 = user.creatures[creature2Index];
 
-        // Check if both creatures are at the same level
-        if (creature1.level !== creature2.level) {
+        // Check if both creatures are at the same milestone level
+        const currentLevel = creature1.level;
+        if (creature1.level !== creature2.level || creature2.level !== currentLevel) {
             return res.status(400).json({
                 success: false,
                 message: 'Both creatures must be at the same milestone level (10, 20, or 30)'
             });
         }
 
-        // Determine target level
-        const currentLevel = creature1.level;
+        // Determine target level based on current level
         let targetLevel;
         if (currentLevel === 10) {
             targetLevel = 11;
@@ -749,8 +749,10 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             });
         }
 
-        // Find the creature template
+        // Find creature template
         let creatureTemplate = null;
+        
+        // Try multiple ways to find the template
         if (creature1.creature_Id_reference) {
             creatureTemplate = await Creature.findOne({ creature_Id: creature1.creature_Id_reference });
         }
@@ -760,6 +762,9 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         if (!creatureTemplate && creature1.creature_type) {
             creatureTemplate = await Creature.findOne({ creature_type: creature1.creature_type });
         }
+        if (!creatureTemplate && creature1.creature_id) {
+            creatureTemplate = await Creature.findOne({ _id: creature1.creature_id });
+        }
         
         if (!creatureTemplate) {
             return res.status(404).json({
@@ -768,64 +773,750 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             });
         }
 
-        // Calculate anima cost
+        // Check if both creatures have an upgrade in progress
+        if (creature1.upgrade_progress > 0 && creature2.upgrade_progress > 0 && 
+            creature1.last_upgrade_click_time && creature2.last_upgrade_click_time) {
+            
+            // Get the earliest of the two click times
+            const lastClickTime = new Date(Math.min(
+                new Date(creature1.last_upgrade_click_time).getTime(),
+                new Date(creature2.last_upgrade_click_time).getTime()
+            ));
+            
+            const now = new Date();
+            const timeSinceLastClick = (now - lastClickTime) / 1000; // in seconds
+            
+            // Calculate required wait time based on level and creature type
+            let waitTimeMinutes;
+            
+            if (creatureTemplate.type === 'common') {
+                waitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10; // Changed from 15/30/60 to 2/5/10
+            } else if (creatureTemplate.type === 'rare') {
+                waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
+            } else if (creatureTemplate.type === 'epic') {
+                waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
+            } else {
+                waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
+            }
+            
+            const requiredWaitTimeSeconds = waitTimeMinutes * 60;
+            
+            if (timeSinceLastClick < requiredWaitTimeSeconds) {
+                // Not enough time has passed - immediately return error without processing further
+                const remainingSeconds = Math.ceil(requiredWaitTimeSeconds - timeSinceLastClick);
+                const remainingMinutes = Math.floor(remainingSeconds / 60);
+                const remainingSecondsFormatted = remainingSeconds % 60;
+                
+                // Calculate progress based on time elapsed
+                let initialProgress;
+                if (creatureTemplate.type === 'common') {
+                    initialProgress = 50;
+                } else if (creatureTemplate.type === 'rare') {
+                    initialProgress = 25;
+                } else if (creatureTemplate.type === 'epic') {
+                    initialProgress = 15;
+                } else {
+                    initialProgress = 10;
+                }
+                
+                const timeProgress = Math.floor((timeSinceLastClick / requiredWaitTimeSeconds) * (100 - initialProgress));
+                const progressPercentage = initialProgress + timeProgress;
+                
+                return res.status(200).json({
+                    success: true,
+                    message: `Timer started. Wait ${waitTimeMinutes} minutes before collecting. No progress yet.`,
+                    anima_cost: animaCost,
+                    remaining_anima: user.currency.anima,
+                    timer: {
+                        wait_minutes: waitTimeMinutes,
+                        start_time: lastClickTime.toISOString(),
+                        estimated_finish_time: new Date(lastClickTime.getTime() + (requiredWaitTimeSeconds * 1000)).toISOString()
+                    },
+                    data: {
+                        is_complete: false,
+                        progress_percentage: 0,
+                        total_progress: 0,
+                        rarity: creatureTemplate.type
+                    }
+                });
+            }
+            
+            // If we get here, enough time has passed
+            console.log('Wait time completed - proceeding with upgrade');
+            // Set progress to 100% to complete the merge
+            user.creatures[creature1Index].upgrade_progress = 100;
+            user.creatures[creature2Index].upgrade_progress = 100;
+        }
+
+        // Continue with existing code for upgrade process...
+        // (Rest of your existing upgrade code follows)
+        
+        // Get stats for the target level
+        const levelStats = creatureTemplate.level_stats.find(stat => stat.level === targetLevel);
+        if (!levelStats) {
+            return res.status(400).json({
+                success: false,
+                message: `Stats not found for level ${targetLevel}`
+            });
+        }
+
+        // Determine anima costs based on rarity and level
+        let requiredAnima, secondClickAnima;
+        switch (creatureTemplate.type) {
+            case 'common':
+                if (currentLevel === 10) {
+                    requiredAnima = 100;
+                    secondClickAnima = 30;
+                } else if (currentLevel === 20) {
+                    requiredAnima = 200;
+                    secondClickAnima = 60;
+                } else if (currentLevel === 30) {
+                    requiredAnima = 300;
+                    secondClickAnima = 90;
+                }
+                break;
+            case 'rare':
+                if (currentLevel === 10) {
+                    requiredAnima = 200;
+                    secondClickAnima = 60;
+                } else if (currentLevel === 20) {
+                    requiredAnima = 400;
+                    secondClickAnima = 120;
+                } else if (currentLevel === 30) {
+                    requiredAnima = 600;
+                    secondClickAnima = 180;
+                }
+                break;
+            case 'epic':
+                if (currentLevel === 10) {
+                    requiredAnima = 600;
+                    secondClickAnima = 90;
+                } else if (currentLevel === 20) {
+                    requiredAnima = 1200;
+                    secondClickAnima = 180;
+                } else if (currentLevel === 30) {
+                    requiredAnima = 1800;
+                    secondClickAnima = 270;
+                }
+                break;
+            case 'legendary':
+                if (currentLevel === 10) {
+                    requiredAnima = 1200;
+                    secondClickAnima = 120;
+                } else if (currentLevel === 20) {
+                    requiredAnima = 2400;
+                    secondClickAnima = 240;
+                } else if (currentLevel === 30) {
+                    requiredAnima = 4800;
+                    secondClickAnima = 360;
+                }
+                break;
+            case 'elite':
+                if (currentLevel === 10) {
+                    requiredAnima = 1400;
+                    secondClickAnima = 150;
+                } else if (currentLevel === 20) {
+                    requiredAnima = 2800;
+                    secondClickAnima = 300;
+                } else if (currentLevel === 30) {
+                    requiredAnima = 4600;
+                    secondClickAnima = 450;
+                }
+                break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: `Unsupported creature rarity: ${creatureTemplate.type}`
+                });
+        }
+
+        // Check if this is the first or second click for this upgrade
+        const creature1Progress = parseInt(user.creatures[creature1Index].upgrade_progress) || 0;
+        const creature2Progress = parseInt(user.creatures[creature2Index].upgrade_progress) || 0;
+        const previousProgress = Math.max(creature1Progress, creature2Progress);
+        const isSecondClick = previousProgress > 0;
+
+        // For rare creatures, determine if this is a third or fourth click
+        const clickCount = Math.floor(previousProgress / 25) + 1; // Each click adds at least 25%
+        const isThirdClick = clickCount === 3;
+        const isFourthClick = clickCount === 4;
+
+        // Calculate animaCost based on rarity and click count
         let animaCost;
-        if (creature1.upgrade_progress && creature1.upgrade_progress > 0) {
-            // Subsequent click
-            switch (creatureTemplate.type) {
-                case 'common':
-                    animaCost = currentLevel === 10 ? 30 : currentLevel === 20 ? 60 : 90;
-                    break;
-                case 'rare':
-                    animaCost = currentLevel === 10 ? 60 : currentLevel === 20 ? 120 : 180;
-                    break;
-                case 'epic':
-                    animaCost = currentLevel === 10 ? 90 : currentLevel === 20 ? 180 : 270;
-                    break;
-                case 'legendary':
-                    animaCost = currentLevel === 10 ? 120 : currentLevel === 20 ? 240 : 360;
-                    break;
-                case 'elite':
-                    animaCost = currentLevel === 10 ? 150 : currentLevel === 20 ? 300 : 450;
-                    break;
-                default:
-                    animaCost = 100;
+        if (creatureTemplate.type === 'rare') {
+            if (isSecondClick || isThirdClick || isFourthClick) {
+                animaCost = secondClickAnima;
+            } else {
+                animaCost = requiredAnima;
             }
         } else {
-            // First click
-            switch (creatureTemplate.type) {
-                case 'common':
-                    animaCost = currentLevel === 10 ? 100 : currentLevel === 20 ? 200 : 300;
-                    break;
-                case 'rare':
-                    animaCost = currentLevel === 10 ? 200 : currentLevel === 20 ? 400 : 600;
-                    break;
-                case 'epic':
-                    animaCost = currentLevel === 10 ? 600 : currentLevel === 20 ? 1200 : 1800;
-                    break;
-                case 'legendary':
-                    animaCost = currentLevel === 10 ? 1200 : currentLevel === 20 ? 2400 : 4800;
-                    break;
-                case 'elite':
-                    animaCost = currentLevel === 10 ? 1400 : currentLevel === 20 ? 2800 : 4600;
-                    break;
-                default:
-                    animaCost = 100;
+            animaCost = isSecondClick ? secondClickAnima : requiredAnima;
+        }
+
+        // Check if these creatures are already partnered for upgrade
+        const creature1PartnerId = user.creatures[creature1Index].upgrade_partner_id;
+        const creature2PartnerId = user.creatures[creature2Index].upgrade_partner_id;
+        const isAlreadyPartnered = (creature1PartnerId && creature1PartnerId.toString() === user.creatures[creature2Index]._id.toString()) ||
+                                  (creature2PartnerId && creature2PartnerId.toString() === user.creatures[creature1Index]._id.toString());
+
+        // If this is not the first click, validate that these are the correct partner creatures
+        if (isSecondClick && !isAlreadyPartnered) {
+            return res.status(400).json({
+                success: false,
+                message: 'These creatures are not partnered for upgrade. Please select the correct partner creature.'
+            });
+        }
+
+        // If this is a first click, validate that neither creature is already partnered
+        if (!isSecondClick && (creature1PartnerId || creature2PartnerId)) {
+            // Reset any existing partnerships
+            user.creatures[creature1Index].upgrade_partner_id = null;
+            user.creatures[creature2Index].upgrade_partner_id = null;
+            user.creatures[creature1Index].upgrade_progress = 0;
+            user.creatures[creature2Index].upgrade_progress = 0;
+            await user.save();
+        }
+
+        // Check if user has enough anima
+        if (!user.currency || user.currency.anima < requiredAnima) {
+            return res.status(400).json({
+                success: false,
+                message: `Not enough anima. Required: ${requiredAnima}`
+            });
+        }
+
+        // Deduct anima
+        user.currency.anima -= requiredAnima;
+
+        // Update creature stats
+        if (levelStats && typeof levelStats.health === 'number' && typeof levelStats.attack === 'number') {
+            // Only update if we have valid number values
+            user.creatures[creature1Index].health = Number(user.creatures[creature1Index].health || 0) + Number(levelStats.health || 0);
+            user.creatures[creature1Index].attack = Number(user.creatures[creature1Index].attack || 0) + Number(levelStats.attack || 0);
+            user.creatures[creature2Index].health = Number(user.creatures[creature2Index].health || 0) + Number(levelStats.health || 0);
+            user.creatures[creature2Index].attack = Number(user.creatures[creature2Index].attack || 0) + Number(levelStats.attack || 0);
+        }
+
+        // Update upgrade progress
+        user.creatures[creature1Index].upgrade_progress = isSecondClick ? 25 : isThirdClick ? 50 : isFourthClick ? 75 : 0;
+        user.creatures[creature2Index].upgrade_progress = isSecondClick ? 25 : isThirdClick ? 50 : isFourthClick ? 75 : 0;
+
+        // Set partner IDs but IMPORTANT: don't set progress on first call
+        if (!isSecondClick) {
+            // First evolve call: only set partner IDs and timer, no progress
+            user.creatures[creature1Index].upgrade_partner_id = user.creatures[creature2Index]._id;
+            user.creatures[creature2Index].upgrade_partner_id = user.creatures[creature1Index]._id;
+            
+            // Create active_merges entry with 0% progress if it doesn't exist
+            if (!user.active_merges) {
+                user.active_merges = [];
             }
+            
+            const now = new Date();
+            let waitTimeMinutes;
+        if (creatureTemplate.type === 'common') {
+                waitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10;
+            } else if (creatureTemplate.type === 'rare') {
+                waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
+            } else if (creatureTemplate.type === 'epic') {
+                waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
+            } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
+                waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
+            }
+            
+            // Add or update the active merge record
+            const existingMergeIndex = user.active_merges.findIndex(
+                m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                     (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+            );
+            
+            if (existingMergeIndex !== -1) {
+                // Update existing record
+                user.active_merges[existingMergeIndex].progress = 0; // Reset progress
+                user.active_merges[existingMergeIndex].start_time = now;
+                user.active_merges[existingMergeIndex].estimated_finish_time = 
+                    new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
+                user.active_merges[existingMergeIndex].last_update = now;
+            } else {
+                // Create new record
+                user.active_merges.push({
+                    creature1_id: creature1Id,
+                    creature1_name: creature1.name,
+                    creature1_level: creature1.level,
+                    creature2_id: creature2Id,
+                    creature2_name: creature2.name,
+                    creature2_level: creature2.level,
+                    start_time: now,
+                    estimated_finish_time: new Date(now.getTime() + (waitTimeMinutes * 60 * 1000)),
+                    last_update: now,
+                    target_level: targetLevel,
+                    progress: 0, // Set to 0 for evolve call - collect API will add progress
+                    is_complete: false, // Not complete yet
+                    rarity: creatureTemplate.type,
+                    wait_time_minutes: waitTimeMinutes,
+                    anima_spent: animaCost
+                });
+            }
+                user.markModified('active_merges');
+        }
+
+        // Mark as modified since we're updating nested arrays
+        user.markModified('creatures');
+        
+        // Save user
+                await user.save();
+                
+        // Track quest progress
+        try {
+            // Import quest service
+            const questService = require('../service/questService');
+            
+            // Track creature upgrade for quest progress
+            await questService.trackQuestProgress(userId, 'upgrade_creature', {
+                creature_id: creature1Id,
+                creature_type: creature1.creature_type,
+                creature_rarity: creature1.rarity,
+                target_level: targetLevel
+            });
+        } catch (questError) {
+            console.error('Error tracking quest progress for creature upgrade:', questError);
+            // Continue with response even if quest tracking fails
+        }
+        
+        // *** MAJOR FIX: Check for any creature with existing progress BEFORE creature-specific checks ***
+        // Define isPartnered by checking if creatures are already partnered
+        const isPartnered = 
+            (creature1.upgrade_partner_id && creature1.upgrade_partner_id.toString() === creature2._id.toString()) ||
+            (creature2.upgrade_partner_id && creature2.upgrade_partner_id.toString() === creature1._id.toString());
+        
+        // If there's existing progress after a collect, we should ALWAYS allow immediate evolve
+        if (isPartnered && previousProgress > 0 && previousProgress < 100) {
+            console.log(`Continuing evolution with ${previousProgress}% progress for ${creatureTemplate.type} creature`);
+            
+            // Get wait time based on creature type and level
+            let waitTimeMinutes;
+            if (creatureTemplate.type === 'common') {
+                waitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10;
+            } else if (creatureTemplate.type === 'rare') {
+                waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
+            } else if (creatureTemplate.type === 'epic') {
+                waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
+            } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
+                waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
+            }
+            
+            // Start a new timer for the next collection but keep progress
+                const now = new Date();
+                user.creatures[creature1Index].last_upgrade_click_time = now;
+                user.creatures[creature2Index].last_upgrade_click_time = now;
+            
+            // Update the active merge record if it exists
+            if (user.active_merges) {
+                const activeMergeIndex = user.active_merges.findIndex(
+                    m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                        (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+                );
+                
+                if (activeMergeIndex !== -1) {
+                    // Reset timer but keep progress
+                    user.active_merges[activeMergeIndex].start_time = now;
+                    user.active_merges[activeMergeIndex].estimated_finish_time = 
+                        new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
+                    user.active_merges[activeMergeIndex].last_update = now;
+                    user.markModified('active_merges');
+                }
+            }
+            
+            // Update the merging history record if it exists
+            if (user.merging_history) {
+                const existingMergeIndex = user.merging_history.findIndex(
+                    m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                        (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+                );
+                
+                if (existingMergeIndex !== -1) {
+                    // Reset timer but keep progress
+                    user.merging_history[existingMergeIndex].start_time = now;
+                    user.merging_history[existingMergeIndex].estimated_finish_time = 
+                        new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
+                    user.merging_history[existingMergeIndex].last_update = now;
+                    user.markModified('merging_history');
+                }
+            }
+            
+            // Save changes
+            user.markModified('creatures');
+                await user.save();
+                
+            // IMPORTANT: Return success response, NOT an error with waiting time
+            return res.status(200).json({
+                success: true,
+                message: `Evolve continued successfully with ${previousProgress}% progress. Timer started for next collection.`,
+                data: {
+                    current_progress: previousProgress,
+                    anima_deducted: requiredAnima,
+                    timing: {
+                        start_time: now.toISOString(),
+                        estimated_finish_time: new Date(now.getTime() + (waitTimeMinutes * 60 * 1000)).toISOString(),
+                        wait_time_minutes: waitTimeMinutes
+                    }
+                }
+            });
+        }
+        
+        // If we get here, enough time has passed, so update the last click time
+        console.log('Enough time has passed - proceeding with upgrade');
+        const now = new Date();
+        user.creatures[creature1Index].last_upgrade_click_time = now;
+        user.creatures[creature2Index].last_upgrade_click_time = now;
+        
+        // IMPORTANT: DON'T SET PROGRESS TO 100% HERE
+        // THIS SHOULD ONLY HAPPEN IN COLLECT ENDPOINT
+        // The problem was that this code was setting progress to 100% on evolve
+        // which was completing the merge instead of just starting a timer
+        // user.creatures[creature1Index].upgrade_progress = 100;
+        // user.creatures[creature2Index].upgrade_progress = 100;
+        
+        // Update progress for both creatures
+        // DO NOT set progress to 100% here - only set the timer
+        // Keep the existing progress instead
+        // user.creatures[creature1Index].upgrade_progress = 100;
+        // user.creatures[creature2Index].upgrade_progress = 100;
+
+        // Update the merging history record with completion info
+        if (user.merging_history) {
+            const existingMergeIndex = user.merging_history.findIndex(
+                m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                     (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+            );
+            
+            // Create the merged creature here before using it anywhere
+            const mergedCreature = {
+                creature_id: creature1.creature_id,
+                name: creatureTemplate.name,
+                level: targetLevel,
+                building_index: creature1.building_index,
+                creature_type: creature1.creature_type,
+                creature_Id_reference: creature1.creature_Id_reference, // Preserve the reference ID
+                base_attack: creature1.base_attack || 0,
+                base_health: creature1.base_health || 0,
+                attack: Number(levelStats.attack) || creature1.attack || 10,
+                health: Number(levelStats.health) || creature1.health || 10,
+                speed: Number(levelStats.speed) || creature1.speed || 1,
+                armor: Number(levelStats.armor) || creature1.armor || 0,
+                critical_damage_percentage: Number(levelStats.critical_damage_percentage) || creature1.critical_damage_percentage || 0,
+                critical_damage: Number(levelStats.critical_damage) || creature1.critical_damage || 0,
+                gold_coins: Number(levelStats.gold) || creature1.gold_coins || 0,
+                arcane_energy: Number(levelStats.arcane_energy) || creature1.arcane_energy || 0,
+                count: 1,
+                image: creatureTemplate.image,
+                description: creatureTemplate.description
+            };
+            
+            if (existingMergeIndex !== -1) {
+                user.merging_history[existingMergeIndex].is_complete = true;
+                // Don't set progress to 100% here - this is only for the evolve API
+                // Progress should only be set to 100% in the collect API
+                // user.merging_history[existingMergeIndex].progress = 100;
+                user.merging_history[existingMergeIndex].progress = 0;
+                user.merging_history[existingMergeIndex].completion_time = now;
+                user.merging_history[existingMergeIndex].total_anima_spent = 
+                    (user.merging_history[existingMergeIndex].anima_spent || 0) + animaCost;
+                user.merging_history[existingMergeIndex].result_creature_id = mergedCreature._id;
+            } else {
+                // If no existing record, create a new one with complete status
+                const newMergeRecord = {
+                    creature1_id: creature1Id,
+                    creature1_name: creature1.name,
+                    creature1_level: creature1.level,
+                    creature2_id: creature2Id,
+                    creature2_name: creature2.name,
+                    creature2_level: creature2.level,
+                    start_time: new Date(now.getTime() - ((targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10) * 60 * 1000)), // Approximate start time
+                    completion_time: now,
+                    estimated_finish_time: now,
+                    target_level: targetLevel,
+                    progress: 0, // Set to 0 for evolve call - collect API will add progress
+                    is_complete: false, // Not complete yet
+                    rarity: creatureTemplate.type,
+                    wait_time_minutes: (targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10), // Changed from 5/10/20 to 2/5/10
+                    anima_spent: animaCost,
+                    total_anima_spent: animaCost,
+                    current_step: 2,
+                    required_steps: 2,
+                    result_creature_id: mergedCreature._id
+                };
+                user.merging_history.push(newMergeRecord);
+            }
+            
+            user.markModified('merging_history');
+        }
+
+        await user.save();
+
+        // Calculate required anima based on click
+        // Note: animaCost is already declared above - we're just updating its value here
+        if (creatureTemplate.type === 'rare') {
+            if (isSecondClick) animaCost = secondClickAnima;
+            else if (isThirdClick) animaCost = secondClickAnima;
+            else if (isFourthClick) animaCost = secondClickAnima;
+            else animaCost = requiredAnima;
+        } else {
+            animaCost = isSecondClick ? secondClickAnima : requiredAnima;
         }
 
         // Check if user has enough anima
         if (!user.currency || user.currency.anima < animaCost) {
             return res.status(400).json({
                 success: false,
-                message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency?.anima || 0}`
+                message: `Not enough anima. Required: ${animaCost}`
             });
         }
 
-        // Deduct anima
+        // Deduct anima cost
         user.currency.anima -= animaCost;
 
-        // Calculate wait time based on creature type and level
+        // Note: The mergedCreature is already created above, don't recreate it here
+
+        // Create the merged creature
+        const mergedCreature = {
+            _id: new mongoose.Types.ObjectId(), // Add proper MongoDB ID
+            creature_id: creature1.creature_id,
+            name: creatureTemplate.name,
+            level: targetLevel,
+            building_index: creature1.building_index,
+            creature_type: creature1.creature_type,
+            creature_Id_reference: creature1.creature_Id_reference, // Preserve the reference ID
+            base_attack: creature1.base_attack || creatureTemplate.base_attack || 45,
+            base_health: creature1.base_health || creatureTemplate.base_health || 250,
+            attack: Number(levelStats?.attack) || creature1.attack || 50,
+            health: Number(levelStats?.health) || creature1.health || 300,
+            speed: Number(levelStats?.speed) || creature1.speed || 100,
+            armor: Number(levelStats?.armor) || creature1.armor || 0,
+            critical_damage_percentage: Number(levelStats?.critical_damage_percentage) || creature1.critical_damage_percentage || 25,
+            critical_damage: Number(levelStats?.critical_damage) || creature1.critical_damage || 100,
+            gold_coins: Number(levelStats?.gold) || creature1.gold_coins || 50,
+            arcane_energy: Number(levelStats?.arcane_energy) || creature1.arcane_energy || 99,
+            count: 1,
+            image: creatureTemplate.image,
+            description: creatureTemplate.description,
+            type: creatureTemplate.type || creature1.type || 'common', // Ensure type is preserved
+            upgrade_progress: 0,
+            upgrade_partner_id: null,
+            last_upgrade_click_time: null
+        };
+
+        let isComplete = false;
+        let progressPercentage = 0;
+        let totalProgress = previousProgress;
+
+        // Generate new progress based on rarity and click count
+        let newProgress;
+        if (creatureTemplate.type === 'common') {
+            // Common creatures: 50% first click, 50% second click
+            newProgress = 50;
+        } else if (creatureTemplate.type === 'rare') {
+            if (clickCount === 1) {
+                // First click: 25%
+                newProgress = 25;
+            } else if (clickCount === 2) {
+                // Second click: 25%
+                newProgress = 25;
+            } else if (clickCount === 3) {
+                // Third click: 25%
+                newProgress = 25;
+            } else {
+                // Fourth click: remaining progress
+                newProgress = 100 - totalProgress;
+            }
+        } else if (creatureTemplate.type === 'epic') {
+            if (clickCount <= 7) {
+                // First 7 clicks: 12-15% each
+                newProgress = Math.floor(Math.random() * 4) + 12;
+            } else {
+                // Eighth click: remaining progress
+                newProgress = 100 - totalProgress;
+            }
+        } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
+            if (clickCount <= 9) {
+                // First 9 clicks: 10-12% each
+                newProgress = Math.floor(Math.random() * 3) + 10;
+            } else {
+                // Tenth click: remaining progress
+                newProgress = 100 - totalProgress;
+            }
+        }
+
+        // Modify progress tracking to always be at least 15% per click
+        if (newProgress < 15 && creatureTemplate.type !== 'common') {
+            newProgress = 15;
+        }
+
+        progressPercentage = newProgress;
+        totalProgress += newProgress;
+
+        // If click would push us over 100%, cap at 100%
+        if (totalProgress > 100) {
+            progressPercentage = 100 - (totalProgress - newProgress);
+            totalProgress = 100;
+        }
+
+        console.log('Progress calculation:', {
+            previousProgress,
+            newProgress,
+            progressPercentage,
+            totalProgress,
+            isSecondClick,
+            isThirdClick,
+            isFourthClick,
+            clickCount,
+            rarity: creatureTemplate.type
+        });
+
+        // Check if upgrade should complete
+        if (totalProgress >= 100) {
+            isComplete = true;
+            
+            // Update the merging history record with final details
+            if (user.merging_history) {
+                const existingMergeIndex = user.merging_history.findIndex(
+                    m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                         (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+                );
+                
+                if (existingMergeIndex !== -1) {
+                    // Set completion details
+                    user.merging_history[existingMergeIndex].is_complete = true;
+                    user.merging_history[existingMergeIndex].progress = 0;
+                    user.merging_history[existingMergeIndex].completion_time = new Date();
+                    user.merging_history[existingMergeIndex].total_anima_spent = 
+                        (user.merging_history[existingMergeIndex].anima_spent || 0) + animaCost;
+                    user.merging_history[existingMergeIndex].result_creature_id = mergedCreature._id;
+                }
+                
+                user.markModified('merging_history');
+            }
+            
+            // Remove from active_merges when complete
+            if (!user.active_merges) {
+                user.active_merges = [];
+            }
+            
+            user.active_merges = user.active_merges.filter(
+                m => !((m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                      (m.creature1_id === creature2Id && m.creature2_id === creature1Id))
+            );
+            user.markModified('active_merges');
+            
+            // Remove both original creatures
+            user.creatures.splice(Math.max(creature1Index, creature2Index), 1);
+            user.creatures.splice(Math.min(creature1Index, creature2Index), 1);
+            // Add the merged creature
+            user.creatures.push(mergedCreature);
+
+            // Update building references - remove old creatures and add the new one
+            const buildingIndex = creature1.building_index;
+            if (buildingIndex !== undefined && buildingIndex !== null) {
+                const buildingToUpdate = user.buildings.find(b => b.index === buildingIndex);
+                
+                if (buildingToUpdate) {
+                    // Initialize creatures array if it doesn't exist
+                    if (!buildingToUpdate.creatures) {
+                        buildingToUpdate.creatures = [];
+                    }
+                    
+                    console.log('BEFORE: Building creatures array:', buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'invalid'));
+                    
+                    // Remove old creature references
+                    buildingToUpdate.creatures = buildingToUpdate.creatures.filter(c => {
+                        if (!c) return false;
+                        const c1Id = creature1._id && creature1._id.toString ? creature1._id.toString() : '';
+                        const c2Id = creature2._id && creature2._id.toString ? creature2._id.toString() : '';
+                        return c.toString && c.toString() !== c1Id && c.toString() !== c2Id;
+                    });
+                    
+                    // Add the new merged creature reference
+                    if (mergedCreature._id) {
+                        buildingToUpdate.creatures.push(mergedCreature._id);
+                        console.log(`Added merged creature ${mergedCreature._id} to building ${buildingIndex}`);
+                    } else {
+                        // If mergedCreature._id is undefined, we need to save first to get the ID
+                        user.markModified('creatures');
+                        await user.save();
+                        
+                        // Now mergedCreature should have an _id
+                        const savedCreature = user.creatures[user.creatures.length - 1];
+                        if (savedCreature && savedCreature._id) {
+                            buildingToUpdate.creatures.push(savedCreature._id);
+                            console.log(`Added saved creature ${savedCreature._id} to building ${buildingIndex} after save`);
+                        } else {
+                            console.error('Failed to get merged creature ID even after save');
+                        }
+                    }
+                    
+                    console.log('AFTER: Building creatures array:', buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'invalid'));
+                    
+                    // Log the update for debugging
+                    console.log('Updated building creatures in collect-upgrade:', {
+                        buildingIndex,
+                        oldCreatures: [
+                            creature1._id && creature1._id.toString ? creature1._id.toString() : 'undefined', 
+                            creature2._id && creature2._id.toString ? creature2._id.toString() : 'undefined'
+                        ],
+                        newCreature: mergedCreature._id ? mergedCreature._id.toString() : 'undefined',
+                        currentCreatures: buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'undefined')
+                    });
+                    
+                    // Mark buildings as modified
+                    user.markModified('buildings');
+                    
+                    // Save user immediately to ensure building changes are persisted
+                    try {
+                        await user.save();
+                        console.log('User saved successfully with updated building creatures array in collect-upgrade');
+                    } catch (saveError) {
+                        console.error('Error saving user with updated building in collect-upgrade:', saveError);
+                    }
+                } else {
+                    console.log('Building not found in collect-upgrade:', {
+                        buildingIndex,
+                        totalBuildings: user.buildings ? user.buildings.length : 0
+                    });
+                }
+            }
+        } else {
+            // Update progress and partner IDs in both original creatures
+            user.creatures[creature1Index].upgrade_progress = totalProgress;
+            user.creatures[creature1Index].upgrade_partner_id = creature2.creature_id;
+            user.creatures[creature1Index].last_upgrade_click_time = new Date();
+            
+            user.creatures[creature2Index].upgrade_progress = totalProgress;
+            user.creatures[creature2Index].upgrade_partner_id = creature1.creature_id;
+            user.creatures[creature2Index].last_upgrade_click_time = new Date();
+            
+            // Update the merging history record with progress
+            if (user.merging_history) {
+                const existingMergeIndex = user.merging_history.findIndex(
+                    m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                         (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+                );
+                
+                if (existingMergeIndex !== -1) {
+                    user.merging_history[existingMergeIndex].progress = totalProgress;
+                    user.merging_history[existingMergeIndex].last_update = new Date();
+                    user.merging_history[existingMergeIndex].anima_spent = 
+                        (user.merging_history[existingMergeIndex].anima_spent || 0) + animaCost;
+                }
+                
+                user.markModified('merging_history');
+            }
+        }
+
+        // Track merging history
+        ensureMergingHistory(user);
+
+        // Define variables needed for response
+        // Reuse the existing 'now' variable rather than redeclaring it
         let waitTimeMinutes;
         if (creatureTemplate.type === 'common') {
             waitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10;
@@ -833,75 +1524,18 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
         } else if (creatureTemplate.type === 'epic') {
             waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
-        } else {
+        } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
             waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
         }
 
-        // IMPORTANT: Just start the timer, don't complete the merge
-        const now = new Date();
-        
-        // Set partner IDs if first time
-        if (!creature1.upgrade_partner_id || !creature2.upgrade_partner_id) {
-            user.creatures[creature1Index].upgrade_partner_id = creature2._id;
-            user.creatures[creature2Index].upgrade_partner_id = creature1._id;
-        }
-        
-        // Set minimal progress if none exists
-        if (!creature1.upgrade_progress) {
-            user.creatures[creature1Index].upgrade_progress = 1;
-            user.creatures[creature2Index].upgrade_progress = 1;
-        }
-        
-        // Always update the timer
-        user.creatures[creature1Index].last_upgrade_click_time = now;
-        user.creatures[creature2Index].last_upgrade_click_time = now;
-
-        // Update active_merges entry
-        if (!user.active_merges) {
-            user.active_merges = [];
-        }
-        
-        const existingMergeIndex = user.active_merges.findIndex(
-            m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
-                 (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
-        );
-        
-        if (existingMergeIndex !== -1) {
-            // Update existing record with new timer
-            user.active_merges[existingMergeIndex].start_time = now;
-            user.active_merges[existingMergeIndex].estimated_finish_time = 
-                new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
-        } else {
-            // Create new record
-            user.active_merges.push({
-                creature1_id: creature1Id,
-                creature1_name: creature1.name,
-                creature1_level: creature1.level,
-                creature2_id: creature2Id,
-                creature2_name: creature2.name,
-                creature2_level: creature2.level,
-                start_time: now,
-                estimated_finish_time: new Date(now.getTime() + (waitTimeMinutes * 60 * 1000)),
-                target_level: targetLevel,
-                progress: creature1.upgrade_progress || 1,
-                is_complete: false,
-                rarity: creatureTemplate.type,
-                wait_time_minutes: waitTimeMinutes,
-                anima_spent: animaCost
-            });
-        }
-
-        // Save user
-        user.markModified('creatures');
-        user.markModified('active_merges');
-        await user.save();
-        
-        // Return success response - ALWAYS return timer started message
+        // Generate success response
         return res.status(200).json({
             success: true,
-            message: `Evolution timer started! Wait ${waitTimeMinutes} minutes before collecting.`,
-            anima_cost: animaCost,
-            remaining_anima: user.currency.anima,
+            message: isComplete ? 
+                `Successfully merged creatures from level ${currentLevel} to ${targetLevel}` :
+                `Timer started. Wait ${waitTimeMinutes} minutes before collecting. No progress yet.`,
+                anima_cost: animaCost,
+                remaining_anima: user.currency.anima,
             timer: {
                 wait_minutes: waitTimeMinutes,
                 start_time: now.toISOString(),
