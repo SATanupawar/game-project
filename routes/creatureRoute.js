@@ -772,20 +772,20 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         let animaCost;
         if (creature1.upgrade_progress && creature1.upgrade_progress > 0) {
             // Subsequent click
-            switch (creatureTemplate.type) {
-                case 'common':
+        switch (creatureTemplate.type) {
+            case 'common':
                     animaCost = currentLevel === 10 ? 30 : currentLevel === 20 ? 60 : 90;
-                    break;
-                case 'rare':
+                break;
+            case 'rare':
                     animaCost = currentLevel === 10 ? 60 : currentLevel === 20 ? 120 : 180;
-                    break;
-                case 'epic':
+                break;
+            case 'epic':
                     animaCost = currentLevel === 10 ? 90 : currentLevel === 20 ? 180 : 270;
-                    break;
-                case 'legendary':
+                break;
+            case 'legendary':
                     animaCost = currentLevel === 10 ? 120 : currentLevel === 20 ? 240 : 360;
-                    break;
-                case 'elite':
+                break;
+            case 'elite':
                     animaCost = currentLevel === 10 ? 150 : currentLevel === 20 ? 300 : 450;
                     break;
                 default:
@@ -808,8 +808,8 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
                     break;
                 case 'elite':
                     animaCost = currentLevel === 10 ? 1400 : currentLevel === 20 ? 2800 : 4600;
-                    break;
-                default:
+                break;
+            default:
                     animaCost = 100;
             }
         }
@@ -833,12 +833,12 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
         } else if (creatureTemplate.type === 'epic') {
             waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
-        } else {
+                } else {
             waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
         }
 
         // IMPORTANT: Just start the timer, don't complete the merge
-        const now = new Date();
+                const now = new Date();
         
         // Set partner IDs if first time
         if (!creature1.upgrade_partner_id || !creature2.upgrade_partner_id) {
@@ -853,8 +853,8 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         }
         
         // Always update the timer
-        user.creatures[creature1Index].last_upgrade_click_time = now;
-        user.creatures[creature2Index].last_upgrade_click_time = now;
+                user.creatures[creature1Index].last_upgrade_click_time = now;
+                user.creatures[creature2Index].last_upgrade_click_time = now;
 
         // Update active_merges entry
         if (!user.active_merges) {
@@ -862,30 +862,30 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         }
         
         const existingMergeIndex = user.active_merges.findIndex(
-            m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
-                 (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
-        );
-        
-        if (existingMergeIndex !== -1) {
+                m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                     (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+            );
+            
+            if (existingMergeIndex !== -1) {
             // Update existing record with new timer
             user.active_merges[existingMergeIndex].start_time = now;
             user.active_merges[existingMergeIndex].estimated_finish_time = 
                 new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
-        } else {
+            } else {
             // Create new record
             user.active_merges.push({
-                creature1_id: creature1Id,
-                creature1_name: creature1.name,
-                creature1_level: creature1.level,
-                creature2_id: creature2Id,
-                creature2_name: creature2.name,
-                creature2_level: creature2.level,
+                    creature1_id: creature1Id,
+                    creature1_name: creature1.name,
+                    creature1_level: creature1.level,
+                    creature2_id: creature2Id,
+                    creature2_name: creature2.name,
+                    creature2_level: creature2.level,
                 start_time: now,
                 estimated_finish_time: new Date(now.getTime() + (waitTimeMinutes * 60 * 1000)),
-                target_level: targetLevel,
+                    target_level: targetLevel,
                 progress: creature1.upgrade_progress || 1,
                 is_complete: false,
-                rarity: creatureTemplate.type,
+                    rarity: creatureTemplate.type,
                 wait_time_minutes: waitTimeMinutes,
                 anima_spent: animaCost
             });
@@ -893,15 +893,15 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
 
         // Save user
         user.markModified('creatures');
-        user.markModified('active_merges');
+            user.markModified('active_merges');
         await user.save();
         
         // Return success response - ALWAYS return timer started message
         return res.status(200).json({
             success: true,
             message: `Evolution timer started! Wait ${waitTimeMinutes} minutes before collecting.`,
-            anima_cost: animaCost,
-            remaining_anima: user.currency.anima,
+                anima_cost: animaCost,
+                remaining_anima: user.currency.anima,
             timer: {
                 wait_minutes: waitTimeMinutes,
                 start_time: now.toISOString(),

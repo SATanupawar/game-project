@@ -3577,6 +3577,11 @@ function processUserResponse(user) {
         completed: userObj.merging_history.filter(record => record.is_complete)
     };
     
+    // Preserve battlepass_rewards if they were added
+    if (userObj.battlepass_rewards) {
+        // Keep the battlepass_rewards field as is
+    }
+    
     return userObj;
 }
 

@@ -62,6 +62,8 @@ router.post('/', async (req, res) => {
         const User = require('../models/user');
         const Building = require('../models/building');
         const Creature = require('../models/creature');
+        // Get BattlePass model for rewards
+        const BattlePass = require('../models/battlePass');
 
         // Validate required fields
         if (!userId) {
@@ -90,6 +92,16 @@ router.post('/', async (req, res) => {
             // Process the user data before sending it back
             const processedData = userService.processUserResponse ? 
                 userService.processUserResponse(existingUser) : existingUser;
+            
+            // Get current active battlepass for rewards
+            const currentBattlePass = await BattlePass.getCurrentActiveBattlePass();
+            if (currentBattlePass) {
+                // Add battlepass rewards to the response
+                processedData.battlepass_rewards = {
+                    free_rewards: currentBattlePass.free_rewards || [],
+                    elite_rewards: currentBattlePass.elite_rewards || []
+                };
+            }
             
             return res.status(200).json({
                 success: true,
@@ -229,6 +241,16 @@ router.post('/', async (req, res) => {
             clear_rumble: user.clear_rumble || []
         };
 
+        // Get current active battlepass for rewards
+        const currentBattlePass = await BattlePass.getCurrentActiveBattlePass();
+        if (currentBattlePass) {
+            // Add battlepass rewards to the response
+            userData.battlepass_rewards = {
+                free_rewards: currentBattlePass.free_rewards || [],
+                elite_rewards: currentBattlePass.elite_rewards || []
+            };
+        }
+
         res.status(201).json({
             success: true,
             message: "User created successfully",
@@ -253,6 +275,8 @@ router.get('/:userId', async (req, res) => {
 
         // Get the User model
         const User = require('../models/user');
+        // Get BattlePass model for rewards
+        const BattlePass = require('../models/battlePass');
         
         // Find the user directly
         const user = await User.findOne({ userId });
@@ -265,6 +289,16 @@ router.get('/:userId', async (req, res) => {
         
         // Process the user data before sending it
         const processedData = userService.processUserResponse(user);
+        
+        // Get current active battlepass for rewards
+        const currentBattlePass = await BattlePass.getCurrentActiveBattlePass();
+        if (currentBattlePass) {
+            // Add battlepass rewards to the response
+            processedData.battlepass_rewards = {
+                free_rewards: currentBattlePass.free_rewards || [],
+                elite_rewards: currentBattlePass.elite_rewards || []
+            };
+        }
         
         // Return the user data with simplified stats
         res.status(200).json({
@@ -3668,6 +3702,66 @@ router.post('/:userId/fix-building-creatures', async (req, res) => {
     } catch (error) {
         console.error('Error fixing building-creature relationships:', error);
         res.status(500).json({ success: false, message: `Error: ${error.message}` });
+    }
+});
+
+// Get user's battlepass information
+router.get('/:userId/battlepass', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Fetching battlepass details for user: ${userId}`);
+
+        // Get required models
+        const User = require('../models/user');
+        const BattlePass = require('../models/battlePass');
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        
+        // Get current active battlepass
+        const currentBattlePass = await BattlePass.getCurrentActiveBattlePass();
+        if (!currentBattlePass) {
+            return res.status(404).json({
+                success: false,
+                message: 'No active battle pass found'
+            });
+        }
+        
+        // Get user's battlepass data
+        const userBattlePass = user.battle_pass || {};
+        
+        // Format response
+        const battlePassData = {
+            name: currentBattlePass.name,
+            description: currentBattlePass.description,
+            start_date: currentBattlePass.start_date,
+            end_date: currentBattlePass.end_date,
+            max_level: currentBattlePass.max_level,
+            user_level: userBattlePass.level || 1,
+            current_xp: userBattlePass.xp || 0,
+            is_elite: user.elite_pass && user.elite_pass.active,
+            free_rewards: currentBattlePass.free_rewards || [],
+            elite_rewards: currentBattlePass.elite_rewards || [],
+            claimed_rewards: userBattlePass.claimed_rewards || []
+        };
+        
+        res.status(200).json({
+            success: true,
+            message: 'Battle pass details fetched successfully',
+            data: battlePassData
+        });
+    } catch (error) {
+        console.error('Error fetching battle pass details:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error fetching battle pass details'
+        });
     }
 });
 
