@@ -1494,35 +1494,12 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         user.creatures[creature1Index].upgrade_progress = 100;
         user.creatures[creature2Index].upgrade_progress = 100;
 
-        // Update the merging history record with completion info
+        // Update the merge history record with completion info
         if (user.merging_history) {
             const existingMergeIndex = user.merging_history.findIndex(
                 m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
                      (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
             );
-            
-            // Create the merged creature here before using it anywhere
-            const mergedCreature = {
-                creature_id: creature1.creature_id,
-                name: creatureTemplate.name,
-                level: targetLevel,
-                building_index: creature1.building_index,
-                creature_type: creature1.creature_type,
-                creature_Id_reference: creature1.creature_Id_reference, // Preserve the reference ID
-                base_attack: creature1.base_attack || 0,
-                base_health: creature1.base_health || 0,
-                attack: Number(levelStats.attack) || creature1.attack || 10,
-                health: Number(levelStats.health) || creature1.health || 10,
-                speed: Number(levelStats.speed) || creature1.speed || 1,
-                armor: Number(levelStats.armor) || creature1.armor || 0,
-                critical_damage_percentage: Number(levelStats.critical_damage_percentage) || creature1.critical_damage_percentage || 0,
-                critical_damage: Number(levelStats.critical_damage) || creature1.critical_damage || 0,
-                gold_coins: Number(levelStats.gold) || creature1.gold_coins || 0,
-                arcane_energy: Number(levelStats.arcane_energy) || creature1.arcane_energy || 0,
-                count: 1,
-                image: creatureTemplate.image,
-                description: creatureTemplate.description
-            };
             
             if (existingMergeIndex !== -1) {
                 user.merging_history[existingMergeIndex].is_complete = true;
@@ -1583,8 +1560,6 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
 
         // Deduct anima cost
         user.currency.anima -= animaCost;
-
-        // Note: The mergedCreature is already created above, don't recreate it here
 
         // Create the merged creature
         const mergedCreature = {
@@ -1716,70 +1691,6 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             user.creatures.splice(Math.min(creature1Index, creature2Index), 1);
             // Add the merged creature
             user.creatures.push(mergedCreature);
-
-            // Update building references - remove old creatures and add the new one
-            const buildingIndex = creature1.building_index;
-            if (buildingIndex !== undefined && buildingIndex !== null) {
-                const buildingToUpdate = user.buildings.find(b => b.index === buildingIndex);
-                
-                if (buildingToUpdate) {
-                    // Initialize creatures array if it doesn't exist
-                    if (!buildingToUpdate.creatures) {
-                        buildingToUpdate.creatures = [];
-                    }
-                    
-                    // Remove old creature references
-                    buildingToUpdate.creatures = buildingToUpdate.creatures.filter(c => {
-                        if (!c) return false;
-                        const c1Id = creature1._id && creature1._id.toString ? creature1._id.toString() : '';
-                        const c2Id = creature2._id && creature2._id.toString ? creature2._id.toString() : '';
-                        return c.toString && c.toString() !== c1Id && c.toString() !== c2Id;
-                    });
-                    
-                    // Add the new merged creature reference
-                    if (mergedCreature._id) {
-                        buildingToUpdate.creatures.push(mergedCreature._id);
-                        console.log(`Added creature ${mergedCreature._id} to building ${buildingIndex}`);
-                        
-                        // Ensure the building's creatures array contains the merged creature ID
-                        console.log('BUILDING CREATURES CHECK:', {
-                            buildingIndex,
-                            creatureIdAdded: mergedCreature._id.toString(),
-                            creatureIdInArray: buildingToUpdate.creatures.map(c => c.toString ? c.toString() : 'invalid'),
-                            containsCreature: buildingToUpdate.creatures.some(c => 
-                                c && c.toString && c.toString() === mergedCreature._id.toString()
-                            )
-                        });
-                    }
-                    
-                    // Log the update for debugging
-                    console.log('Updated building creatures:', {
-                        buildingIndex,
-                        oldCreatures: [
-                            creature1._id && creature1._id.toString ? creature1._id.toString() : 'undefined', 
-                            creature2._id && creature2._id.toString ? creature2._id.toString() : 'undefined'
-                        ],
-                        newCreature: mergedCreature._id ? mergedCreature._id.toString() : 'undefined',
-                        currentCreatures: buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'undefined')
-                    });
-                    
-                    // Mark buildings as modified
-                    user.markModified('buildings');
-                    
-                    // Save user immediately to ensure building changes are persisted
-                    try {
-                        await user.save();
-                        console.log('User saved successfully with updated building creatures array');
-                    } catch (saveError) {
-                        console.error('Error saving user with updated building:', saveError);
-                    }
-                } else {
-                    console.log('Building not found:', {
-                        buildingIndex,
-                        totalBuildings: user.buildings ? user.buildings.length : 0
-                    });
-                }
-            }
         } else {
             // Update progress and partner IDs in both original creatures
             user.creatures[creature1Index].upgrade_progress = totalProgress;
@@ -2195,59 +2106,6 @@ router.post('/:userId/collect-upgrade', async (req, res) => {
         // Add the merged creature
         user.creatures.push(mergedCreature);
 
-        // Update building references - remove old creatures and add the new one
-        const buildingIndex = creature1.building_index;
-        if (buildingIndex !== undefined && buildingIndex !== null) {
-            const buildingToUpdate = user.buildings.find(b => b.index === buildingIndex);
-            
-            if (buildingToUpdate) {
-                // Initialize creatures array if it doesn't exist
-                if (!buildingToUpdate.creatures) {
-                    buildingToUpdate.creatures = [];
-                }
-                
-                // Remove old creature references
-                buildingToUpdate.creatures = buildingToUpdate.creatures.filter(c => {
-                    if (!c) return false;
-                    const c1Id = creature1._id && creature1._id.toString ? creature1._id.toString() : '';
-                    const c2Id = creature2._id && creature2._id.toString ? creature2._id.toString() : '';
-                    return c.toString && c.toString() !== c1Id && c.toString() !== c2Id;
-                });
-                
-                // Add the new merged creature reference
-                if (mergedCreature._id) {
-                    buildingToUpdate.creatures.push(mergedCreature._id);
-                }
-                
-                // Log the update for debugging
-                console.log('Updated building creatures in collect-upgrade:', {
-                    buildingIndex,
-                    oldCreatures: [
-                        creature1._id && creature1._id.toString ? creature1._id.toString() : 'undefined', 
-                        creature2._id && creature2._id.toString ? creature2._id.toString() : 'undefined'
-                    ],
-                    newCreature: mergedCreature._id ? mergedCreature._id.toString() : 'undefined',
-                    currentCreatures: buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'undefined')
-                });
-                
-                // Mark buildings as modified
-                user.markModified('buildings');
-                
-                // Save user immediately to ensure building changes are persisted
-                try {
-                    await user.save();
-                    console.log('User saved successfully with updated building creatures array in collect-upgrade');
-                } catch (saveError) {
-                    console.error('Error saving user with updated building in collect-upgrade:', saveError);
-                }
-            } else {
-                console.log('Building not found in collect-upgrade:', {
-                    buildingIndex,
-                    totalBuildings: user.buildings ? user.buildings.length : 0
-                });
-            }
-        }
-
         // Track merging history
         ensureMergingHistory(user);
 
@@ -2642,59 +2500,6 @@ router.post('/:userId/auto-collect-upgrade', async (req, res) => {
         // Add the merged creature
         user.creatures.push(mergedCreature);
 
-        // Update building references - remove old creatures and add the new one
-        const buildingIndex = creature1.building_index;
-        if (buildingIndex !== undefined && buildingIndex !== null) {
-            const buildingToUpdate = user.buildings.find(b => b.index === buildingIndex);
-            
-            if (buildingToUpdate) {
-                // Initialize creatures array if it doesn't exist
-                if (!buildingToUpdate.creatures) {
-                    buildingToUpdate.creatures = [];
-                }
-                
-                // Remove old creature references
-                buildingToUpdate.creatures = buildingToUpdate.creatures.filter(c => {
-                    if (!c) return false;
-                    const c1Id = creature1._id && creature1._id.toString ? creature1._id.toString() : '';
-                    const c2Id = creature2._id && creature2._id.toString ? creature2._id.toString() : '';
-                    return c.toString && c.toString() !== c1Id && c.toString() !== c2Id;
-                });
-                
-                // Add the new merged creature reference
-                if (mergedCreature._id) {
-                    buildingToUpdate.creatures.push(mergedCreature._id);
-                }
-                
-                // Log the update for debugging
-                console.log('Updated building creatures in auto-collect-upgrade:', {
-                    buildingIndex,
-                    oldCreatures: [
-                        creature1._id && creature1._id.toString ? creature1._id.toString() : 'undefined', 
-                        creature2._id && creature2._id.toString ? creature2._id.toString() : 'undefined'
-                    ],
-                    newCreature: mergedCreature._id ? mergedCreature._id.toString() : 'undefined',
-                    currentCreatures: buildingToUpdate.creatures.map(c => c && c.toString ? c.toString() : 'undefined')
-                });
-                
-                // Mark buildings as modified
-                user.markModified('buildings');
-                
-                // Save user immediately to ensure building changes are persisted
-                try {
-                    await user.save();
-                    console.log('User saved successfully with updated building creatures array in auto-collect-upgrade');
-                } catch (saveError) {
-                    console.error('Error saving user with updated building in auto-collect-upgrade:', saveError);
-                }
-            } else {
-                console.log('Building not found in auto-collect-upgrade:', {
-                    buildingIndex,
-                    totalBuildings: user.buildings ? user.buildings.length : 0
-                });
-            }
-        }
-
         // Update merge history
         const mergeHistory = ensureMergingHistory(user);
         const existingMergeIndex = mergeHistory.findIndex(
@@ -2748,7 +2553,8 @@ router.post('/:userId/auto-collect-upgrade', async (req, res) => {
             success: true,
             message: `Successfully auto-collected merged creature from level ${currentLevel} to ${targetLevel}`,
             data: {
-                merged_creature: mergedCreature,                timing: {
+                merged_creature: mergedCreature,
+                timing: {
                     start_time: new Date(lastClickTime),
                     completion_time: now,
                     wait_time_seconds: Math.floor(timeSinceLastClick)
@@ -3110,4 +2916,3 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
 
 module.exports = router;
 
-                
