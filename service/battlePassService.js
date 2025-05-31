@@ -584,11 +584,9 @@ async function claimBattlePassReward(userId, level, isElite) {
                     is_elite: isElite,
                     details: rewardDetails,
                     updated_xp: {
-                        previous_xp: userBattlePass.current_xp + (userBattlePass.xp_history && userBattlePass.xp_history.length > 0 ? 
-                            Math.abs(userBattlePass.xp_history[userBattlePass.xp_history.length - 1].amount) : 0),
+                        previous_xp: userBattlePass.current_xp,
                         current_xp: userBattlePass.current_xp,
-                        xp_deducted: (userBattlePass.xp_history && userBattlePass.xp_history.length > 0 ? 
-                            Math.abs(userBattlePass.xp_history[userBattlePass.xp_history.length - 1].amount) : 0)
+                        xp_deducted: 0
                     },
                     battle_pass: {
                         current_level: userBattlePass.current_level,

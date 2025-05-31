@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const BattlePass = require('../models/battlePass');
 const User = require('../models/user');
+const UserBattlePass = require('../models/userBattlePass');
 
 /**
  * Get the current active Battle Pass
@@ -124,9 +125,9 @@ async function getUserBattlePassProgress(userId) {
 
         // Check if user has battle pass data
         if (!user.battlePassSummary || !user.battlePassSummary.current_level) {
-            // Initialize battle pass data
+            // Initialize battle pass data with level 1 (automatically started)
             user.battlePassSummary = {
-                current_level: 0,
+                current_level: 1,  // Start at level 1 instead of 0
                 current_xp: 0,
                 is_elite: user.elite_pass && user.elite_pass.active,
                 claimed_rewards: [],
@@ -137,15 +138,33 @@ async function getUserBattlePassProgress(userId) {
             
             await user.save();
             
+            // Find or create UserBattlePass record
+            let userBattlePass = await UserBattlePass.findOne({
+                userId,
+                battle_pass_id: battlePass._id
+            });
+            
+            if (!userBattlePass) {
+                userBattlePass = new UserBattlePass({
+                    userId,
+                    battle_pass_id: battlePass._id,
+                    current_level: 1,  // Start at level 1
+                    current_xp: 0,
+                    is_elite: user.elite_pass && user.elite_pass.active
+                });
+                await userBattlePass.save();
+            }
+            
+            // Return battle pass data as started
             return {
                 success: true,
-                message: 'User has not started this Battle Pass',
+                message: 'Battle Pass started automatically',
                 data: {
                     battle_pass_name: battlePass.name,
                     battle_pass_end_date: battlePass.end_date,
-                    has_started: false,
+                    has_started: true,
                     is_elite: user.elite_pass && user.elite_pass.active,
-                    current_level: 0,
+                    current_level: 1,  // Level 1
                     current_xp: 0,
                     max_level: battlePass.max_level,
                     season_days_remaining: Math.ceil((battlePass.end_date - new Date()) / (1000 * 60 * 60 * 24))
@@ -435,6 +454,9 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
  */
 async function claimBattlePassReward(userId, level, isElite) {
     try {
+        // Convert isElite parameter to boolean if it's a string
+        isElite = isElite === true || isElite === "true" || isElite === 1 || isElite === "1";
+        
         // Get current battle pass
         const currentBattlePassResult = await getCurrentBattlePass();
         if (!currentBattlePassResult.success) {
@@ -501,35 +523,10 @@ async function claimBattlePassReward(userId, level, isElite) {
                 };
             }
             
-            // Calculate XP to deduct based on level
-            let xpToDeduct = 0;
-            let totalXpForPreviousLevels = 0;
-            
-            // Calculate XP for all levels up to the claimed reward level
-            for (let l = 1; l <= level; l++) {
-                const xpRequirement = battlePass.xp_requirements.find(
-                    req => l >= req.level_start && l <= req.level_end
-                );
-                
-                if (xpRequirement) {
-                    if (l < level) {
-                        totalXpForPreviousLevels += xpRequirement.xp_required;
-                    } else {
-                        // For the claimed level, deduct the full level's XP requirement
-                        xpToDeduct = xpRequirement.xp_required;
-                    }
-                }
-            }
-            
-            // Deduct XP, but ensure we don't go below the minimum XP needed for current level
-            const minXpForCurrentLevel = totalXpForPreviousLevels;
-            const newXP = Math.max(minXpForCurrentLevel, user.battlePassSummary.current_xp - xpToDeduct);
-            
             // Store the previous XP for the response
             const previousXP = user.battlePassSummary.current_xp;
             
-            // Update current XP
-            user.battlePassSummary.current_xp = newXP;
+            // No longer deducting XP when claiming rewards
             
             // Add to claimed rewards
             if (!user.battlePassSummary.claimed_rewards) {
@@ -660,8 +657,8 @@ async function claimBattlePassReward(userId, level, isElite) {
                     details: rewardDetails,
                     updated_xp: {
                         previous_xp: previousXP,
-                        current_xp: newXP,
-                        xp_deducted: previousXP - newXP
+                        current_xp: previousXP,
+                        xp_deducted: 0
                     },
                     battle_pass: {
                         current_level: user.battlePassSummary.current_level,

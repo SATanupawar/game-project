@@ -165,41 +165,7 @@ userBattlePassSchema.methods.claimReward = async function(level, isElite) {
         throw new Error(`No ${isElite ? 'elite' : 'free'} reward found for level ${level}`);
     }
     
-    // Calculate XP to deduct based on level
-    let xpToDeduct = 0;
-    let totalXpForPreviousLevels = 0;
-    
-    // Calculate XP for all levels up to the claimed reward level
-    for (let l = 1; l <= level; l++) {
-        const xpRequirement = battlePass.xp_requirements.find(
-            req => l >= req.level_start && l <= req.level_end
-        );
-        
-        if (xpRequirement) {
-            if (l < level) {
-                totalXpForPreviousLevels += xpRequirement.xp_required;
-            } else {
-                // For the claimed level, deduct the full level's XP requirement
-                xpToDeduct = xpRequirement.xp_required;
-            }
-        }
-    }
-    
-    // Deduct XP, but ensure we don't go below the minimum XP needed for current level
-    const minXpForCurrentLevel = totalXpForPreviousLevels;
-    const newXP = Math.max(minXpForCurrentLevel, this.current_xp - xpToDeduct);
-    
-    // Add entry to XP history for the deduction
-    this.xp_history.push({
-        amount: -(this.current_xp - newXP),
-        source: `claim_reward_level_${level}`,
-        date: new Date()
-    });
-    
-    // Update current XP
-    this.current_xp = newXP;
-    
-    // Add to claimed rewards
+    // Add to claimed rewards - No XP deduction occurs
     this.claimed_rewards.push({
         level,
         reward_type: reward.reward_type,

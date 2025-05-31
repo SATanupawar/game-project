@@ -3559,25 +3559,6 @@ function processUserResponse(user) {
     if (userObj.last_opened_packs) {
         delete userObj.last_opened_packs;
     }
-    
-    // Remove locked_creatures field
-    if (userObj.locked_creatures) {
-        delete userObj.locked_creatures;
-    }
-    
-    // Ensure merging_history is included (and initialize if not present)
-    if (!userObj.merging_history) {
-        userObj.merging_history = [];
-    }
-    
-    // Process merging history to add in-progress and completed lists
-    userObj.creature_merging = {
-        all: userObj.merging_history,
-        in_progress: userObj.merging_history.filter(record => !record.is_complete),
-        completed: userObj.merging_history.filter(record => record.is_complete)
-    };
-    
-    // Preserve battlepass_rewards if they were added
     if (userObj.battlepass_rewards) {
         // Keep the battlepass_rewards field as is
     }

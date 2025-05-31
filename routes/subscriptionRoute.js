@@ -7,7 +7,7 @@ const BattlePass = require('../models/battlePass');
 const UserBattlePass = require('../models/userBattlePass');
 
 // Create a new subscription
-router.post('/subscriptions', async (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const { userId, subscriptionType, paymentId } = req.body;
         
@@ -40,7 +40,7 @@ router.post('/subscriptions', async (req, res) => {
 });
 
 // Get user's subscription status
-router.get('/subscriptions/:userId', async (req, res) => {
+router.get('/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -69,7 +69,7 @@ router.get('/subscriptions/:userId', async (req, res) => {
 });
 
 // Cancel a subscription
-router.post('/subscriptions/:userId/cancel', async (req, res) => {
+router.post('/:userId/cancel', async (req, res) => {
     try {
         const { userId } = req.params;
         
@@ -98,7 +98,7 @@ router.post('/subscriptions/:userId/cancel', async (req, res) => {
 });
 
 // Renew a subscription
-router.post('/subscriptions/:userId/renew', async (req, res) => {
+router.post('/:userId/renew', async (req, res) => {
     try {
         const { userId } = req.params;
         const { subscriptionType, paymentId } = req.body;
@@ -132,7 +132,7 @@ router.post('/subscriptions/:userId/renew', async (req, res) => {
 });
 
 // Admin endpoint to check and update expired subscriptions
-router.post('/subscriptions/check-expired', async (req, res) => {
+router.post('/check-expired', async (req, res) => {
     try {
         const result = await subscriptionService.checkExpiredSubscriptions();
         
