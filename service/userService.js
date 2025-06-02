@@ -3559,6 +3559,21 @@ function processUserResponse(user) {
     if (userObj.last_opened_packs) {
         delete userObj.last_opened_packs;
     }
+
+    // Format battlePassSummary.claimed_rewards into separate free and elite arrays
+    if (userObj.battlePassSummary && Array.isArray(userObj.battlePassSummary.claimed_rewards)) {
+        const claimedRewards = userObj.battlePassSummary.claimed_rewards || [];
+        const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+        const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
+        
+        // Add formatted claimed_rewards_formatted field for API responses
+        userObj.battlePassSummary.claimed_rewards_formatted = {
+            free: claimedFreeRewards,
+            elite: claimedEliteRewards,
+            all: claimedRewards
+        };
+    }
+    
     if (userObj.battlepass_rewards) {
         // Keep the battlepass_rewards field as is
     }

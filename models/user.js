@@ -176,13 +176,11 @@ const completedQuestSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
-// Define schema for user creature slots
 // Define schema for creature inventory items
 const creatureInventoryItemSchema = new mongoose.Schema({
     creature_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Creature',
-        required: true
+        type: mongoose.Schema.Types.Mixed, // Changed from ObjectId to Mixed to accept both ObjectId and String
+        ref: 'Creature'
     },
     creature_type: {
         type: String,
@@ -321,6 +319,29 @@ const activeMergeSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+// Define schema for user card packs
+const userCardPackSchema = new mongoose.Schema({
+    pack_id: {
+        type: String,
+        required: true
+    },
+    name: {
+        type: String,
+        default: ''
+    },
+    obtained_at: {
+        type: Date,
+        default: Date.now
+    },
+    source: {
+        type: String,
+        default: 'unknown'
+    },
+    is_opened: {
+        type: Boolean,
+        default: false
+    }
+}, { _id: false });
 
 const userSchema = new mongoose.Schema({
     userId: {
@@ -364,6 +385,8 @@ const userSchema = new mongoose.Schema({
         required: true,
         max: 100000000
     },
+    // Card packs obtained from battle pass and other sources
+    card_packs: [userCardPackSchema],
     // Creature inventory - stores creatures obtained from card packs and other sources
     creature_inventory: [creatureInventoryItemSchema],
     // Creature slots that the user has unlocked

@@ -245,6 +245,11 @@ async function getUserBattlePassProgress(userId) {
         // Calculate battle pass progress details
         const progressDetails = calculateBattlePassProgress(user, battlePass);
 
+        // Separate claimed rewards into free and elite categories
+        const claimedRewards = user.battlePassSummary.claimed_rewards || [];
+        const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+        const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
+        
         // Prepare response
         return {
             success: true,
@@ -266,7 +271,10 @@ async function getUserBattlePassProgress(userId) {
                     days_remaining: Math.ceil((battlePass.end_date - new Date()) / (1000 * 60 * 60 * 24)),
                     max_level: battlePass.max_level
                 },
-                claimed_rewards: user.battlePassSummary.claimed_rewards || [],
+                claimed_rewards: {
+                    free: claimedFreeRewards.map(reward => reward.level),
+                    elite: claimedEliteRewards.map(reward => reward.level)
+                },
                 unclaimed_rewards: progressDetails.uncollected_rewards,
                 unclaimed_free_rewards: unclaimedFreeRewards,
                 unclaimed_elite_rewards: unclaimedEliteRewards
@@ -379,7 +387,7 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
         // Update timestamp
         user.battlePassSummary.last_updated = new Date();
         
-        // Calculate battle pass progress details
+        // Calculate battle pass progress details for internal use
         const progressDetails = calculateBattlePassProgress(user, battlePass);
         
         // Update the progress details
@@ -393,6 +401,19 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
         // Check if user leveled up
         const leveledUp = user.battlePassSummary.current_level > previousLevel;
         const newRewards = [];
+
+        // Make sure current_level_progress has all required fields
+        let currentLevelProgress = progressDetails.current_level_progress;
+
+        // If we reached max level, set progress to 100%
+        if (user.battlePassSummary.current_level >= battlePass.max_level) {
+            currentLevelProgress = {
+                xp_required: 0,
+                xp_earned: 0,
+                xp_remaining: 0,
+                progress_percentage: 100
+            };
+        }
 
         if (leveledUp) {
             // Find new rewards that are available at the new level
@@ -423,16 +444,21 @@ async function addUserBattlePassXP(userId, xpAmount, source) {
 
         return {
             success: true,
-            message: `Added ${xpAmount} XP to Battle Pass`,
+            message: leveledUp ? `Level up! Reached level ${user.battlePassSummary.current_level}` : `Added ${xpAmount} XP to Battle Pass`,
             data: {
+                user_id: userId,
                 previous_level: previousLevel,
                 current_level: user.battlePassSummary.current_level,
-                current_xp: user.battlePassSummary.current_xp,
-                leveled_up: leveledUp,
-                new_rewards: newRewards,
-                completed_levels: progressDetails.completed_levels,
-                current_level_progress: progressDetails.current_level_progress,
-                uncollected_rewards: progressDetails.uncollected_rewards
+                levels_gained: leveledUp ? user.battlePassSummary.current_level - previousLevel : 0,
+                xp_added: xpAmount,
+                total_xp: user.battlePassSummary.current_xp,
+                remaining_xp: user.battlePassSummary.current_xp,
+                battle_pass: {
+                    current_level: user.battlePassSummary.current_level,
+                    xp_added: xpAmount,
+                    leveled_up: leveledUp,
+                    current_level_progress: currentLevelProgress
+                }
             }
         };
     } catch (error) {
@@ -582,13 +608,16 @@ async function claimBattlePassReward(userId, level, isElite) {
                     break;
                     
                 case 'card_pack':
-                    // Add card pack to user's inventory (this would depend on your existing system)
+                    // Add card pack to user's inventory
                     if (!user.card_packs) user.card_packs = [];
                     user.card_packs.push({
                         pack_id: reward.pack_id,
+                        name: reward.description || 'Battle Pass Pack',
                         obtained_at: new Date(),
-                        source: 'battle_pass'
+                        source: 'battle_pass',
+                        is_opened: false
                     });
+                    user.markModified('card_packs');
                     rewardDetails = { pack_id: reward.pack_id };
                     break;
                     
@@ -596,22 +625,46 @@ async function claimBattlePassReward(userId, level, isElite) {
                     // Add creature to user's inventory
                     if (!user.creature_inventory) user.creature_inventory = [];
                     
-                    // Check if creature already exists in inventory
-                    const existingCreature = user.creature_inventory.find(c => 
-                        c.creature_id && c.creature_id.toString() === reward.creature_id
-                    );
+                    // Prepare creature data with required fields
+                    const creatureData = {
+                        creature_id: reward.creature_id, // String ID is fine for now
+                        name: reward.description || 'Battle Pass Creature',
+                        creature_type: 'battle_pass',
+                        count: 1,
+                        rarity: 'rare',
+                        obtained_at: new Date(),
+                        source: 'battle_pass'
+                    };
                     
-                    if (existingCreature) {
-                        existingCreature.count += 1;
+                    // Try to convert to ObjectId if it's a valid format
+                    if (reward.creature_id && reward.creature_id.match(/^[0-9a-fA-F]{24}$/)) {
+                        creatureData.creature_id = new mongoose.Types.ObjectId(reward.creature_id);
+                        
+                        // Check if creature already exists in inventory
+                        const existingCreature = user.creature_inventory.find(c => 
+                            c.creature_id && c.creature_id.toString() === reward.creature_id
+                        );
+                        
+                        if (existingCreature) {
+                            existingCreature.count += 1;
+                        } else {
+                            user.creature_inventory.push(creatureData);
+                        }
                     } else {
-                        user.creature_inventory.push({
-                            creature_id: mongoose.Types.ObjectId(reward.creature_id),
-                            name: reward.description || 'Battle Pass Creature',
-                            count: 1,
-                            obtained_at: new Date(),
-                            source: 'battle_pass'
-                        });
+                        // If it's not a valid ObjectId, still add to inventory with string ID
+                        // Check if creature already exists by name
+                        const existingCreature = user.creature_inventory.find(c => 
+                            c.name === creatureData.name
+                        );
+                        
+                        if (existingCreature) {
+                            existingCreature.count += 1;
+                        } else {
+                            user.creature_inventory.push(creatureData);
+                        }
                     }
+                    
+                    user.markModified('creature_inventory');
                     rewardDetails = { creature_id: reward.creature_id };
                     break;
                     
@@ -647,6 +700,11 @@ async function claimBattlePassReward(userId, level, isElite) {
             user.markModified('battlePassSummary');
             await user.save();
             
+            // Separate claimed rewards into free and elite categories
+            const claimedRewards = user.battlePassSummary.claimed_rewards || [];
+            const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+            const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
+            
             return {
                 success: true,
                 message: `Successfully claimed ${isElite ? 'elite' : 'free'} reward for level ${level}`,
@@ -655,17 +713,12 @@ async function claimBattlePassReward(userId, level, isElite) {
                     level,
                     is_elite: isElite,
                     details: rewardDetails,
-                    updated_xp: {
-                        previous_xp: previousXP,
-                        current_xp: previousXP,
-                        xp_deducted: 0
-                    },
                     battle_pass: {
-                        current_level: user.battlePassSummary.current_level,
-                        last_collected_level: user.battlePassSummary.last_collected_level || 0,
-                        completed_levels: progressDetails.completed_levels,
                         current_level_progress: progressDetails.current_level_progress,
-                        uncollected_rewards: progressDetails.uncollected_rewards
+                        claimed_rewards: {
+                            free: claimedFreeRewards.map(reward => reward.level),
+                            elite: claimedEliteRewards.map(reward => reward.level)
+                        }
                     }
                 }
             };

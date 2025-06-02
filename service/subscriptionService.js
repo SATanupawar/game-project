@@ -88,6 +88,61 @@ async function createSubscription(userId, subscriptionType, paymentId = null) {
         }
 
         user.markModified('elite_pass');
+        
+        // Add to user's subscription history
+        let battlePassInfo = null;
+        
+        // Get current active battle pass for history
+        const battlePassForHistory = await BattlePass.findOne({
+            start_date: { $lte: now },
+            end_date: { $gte: now },
+            active: true
+        });
+
+        if (battlePassForHistory) {
+            // Find or create user battle pass record
+            const userBattlePass = await UserBattlePass.findOne({
+                userId,
+                battle_pass_id: battlePassForHistory._id
+            });
+            
+            if (userBattlePass) {
+                battlePassInfo = {
+                    name: battlePassForHistory.name,
+                    is_elite: true,
+                    current_level: userBattlePass.current_level,
+                    start_date: battlePassForHistory.start_date,
+                    end_date: battlePassForHistory.end_date
+                };
+            } else {
+                battlePassInfo = {
+                    name: battlePassForHistory.name,
+                    is_elite: true,
+                    current_level: 1,
+                    start_date: battlePassForHistory.start_date,
+                    end_date: battlePassForHistory.end_date
+                };
+            }
+        }
+
+        // Add subscription record to user's history
+        user.subscription_history = user.subscription_history || [];
+        user.subscription_history.push({
+            type: subscriptionType,
+            start_date: now,
+            end_date: endDate,
+            price: price,
+            status: 'active',
+            elite_pass: {
+                active: true,
+                start_date: now,
+                end_date: endDate
+            },
+            battle_pass: battlePassInfo,
+            created_at: now
+        });
+        
+        user.markModified('subscription_history');
         await user.save();
 
         // Update user battle pass to elite if there is an active battle pass
@@ -120,6 +175,23 @@ async function createSubscription(userId, subscriptionType, paymentId = null) {
             }
 
             await userBattlePass.save();
+            
+            // Update battlePassSummary if it exists
+            if (user.battlePassSummary) {
+                user.battlePassSummary.is_elite = true;
+                user.markModified('battlePassSummary');
+                await user.save();
+            } else {
+                // Create battlePassSummary if it doesn't exist, with proper format
+                user.battlePassSummary = {
+                    is_elite: true,
+                    current_level: 1,
+                    current_xp: 0,
+                    claimed_rewards: []
+                };
+                user.markModified('battlePassSummary');
+                await user.save();
+            }
         }
 
         return {
@@ -511,6 +583,15 @@ async function processUserSubscription(userId, subscriptionType) {
         // Update battlePassSummary if it exists
         if (user.battlePassSummary) {
             user.battlePassSummary.is_elite = true;
+            user.markModified('battlePassSummary');
+        } else {
+            // Create battlePassSummary if it doesn't exist, with proper format
+            user.battlePassSummary = {
+                is_elite: true,
+                current_level: 1,
+                current_xp: 0,
+                claimed_rewards: []
+            };
             user.markModified('battlePassSummary');
         }
 

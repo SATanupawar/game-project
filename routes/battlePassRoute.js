@@ -99,7 +99,7 @@ router.post('/battle-pass/claim-reward', async (req, res) => {
         const result = await battlePassService.claimBattlePassReward(
             userId,
             parseInt(level),
-            isElite === true
+            isElite === true || isElite === "true" || isElite === 1 || isElite === "1"
         );
         
         if (!result.success) {

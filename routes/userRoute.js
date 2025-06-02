@@ -3586,16 +3586,16 @@ router.post('/:userId/add-xp', async (req, res) => {
         // Import the battle pass service
         const directBattlePassService = require('../service/directBattlePassService');
         
-        // Add XP to battle pass (don't await to avoid slowing down the response)
-        directBattlePassService.addUserBattlePassXP(userId, xp_amount, 'user_xp_sync')
-            .then(battlePassResult => {
-                if (!battlePassResult.success) {
-                    console.error('Failed to sync XP to battle pass:', battlePassResult.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error syncing XP to battle pass:', error);
-            });
+        // Add XP to battle pass (synchronously to include in response)
+        let battlePassResult = null;
+        try {
+            battlePassResult = await directBattlePassService.addUserBattlePassXP(userId, xp_amount, 'user_xp_sync');
+            if (!battlePassResult.success) {
+                console.error('Failed to sync XP to battle pass:', battlePassResult.message);
+            }
+        } catch (error) {
+            console.error('Error syncing XP to battle pass:', error);
+        }
 
         // Save the updated user
         await user.save();
@@ -3616,6 +3616,65 @@ router.post('/:userId/add-xp', async (req, res) => {
                 remaining_xp: remainingXP
             }
         };
+
+        // Add battle pass progress to response if available
+        if (battlePassResult && battlePassResult.success) {
+            try {
+                // Handle claimed rewards formatting
+                let claimedRewardsData = {
+                    free: [],
+                    elite: []
+                };
+                
+                if (battlePassResult.data.claimed_rewards) {
+                    if (battlePassResult.data.claimed_rewards.free && 
+                        Array.isArray(battlePassResult.data.claimed_rewards.free) && 
+                        battlePassResult.data.claimed_rewards.elite && 
+                        Array.isArray(battlePassResult.data.claimed_rewards.elite)) {
+                        // It's already in the proper format with free/elite arrays
+                        claimedRewardsData = {
+                            free: battlePassResult.data.claimed_rewards.free,
+                            elite: battlePassResult.data.claimed_rewards.elite
+                        };
+                    } else if (Array.isArray(battlePassResult.data.claimed_rewards)) {
+                        // Convert from array to object with free/elite arrays
+                        const claimedRewards = battlePassResult.data.claimed_rewards || [];
+                        claimedRewardsData.free = claimedRewards.filter(reward => !reward.is_elite);
+                        claimedRewardsData.elite = claimedRewards.filter(reward => reward.is_elite);
+                    }
+                }
+                
+                // Add battle pass progress to response
+                response.data.battle_pass = {
+                    current_level: battlePassResult.data.current_level || battlePassResult.data.battle_pass?.current_level,
+                    xp_added: xp_amount,
+                    leveled_up: battlePassResult.data.leveled_up || battlePassResult.data.battle_pass?.leveled_up || false,
+                    current_level_progress: battlePassResult.data.current_level_progress || battlePassResult.data.battle_pass?.current_level_progress || {
+                        xp_required: 0,
+                        xp_earned: 0,
+                        xp_remaining: 0,
+                        progress_percentage: 0
+                    }
+                };
+                
+                // Only add claimed_rewards if there are any
+                if (claimedRewardsData.free.length > 0 || claimedRewardsData.elite.length > 0) {
+                    response.data.battle_pass.claimed_rewards = claimedRewardsData;
+                }
+                
+                // Add reward info if present
+                if (battlePassResult.data.reward) {
+                    response.data.battle_pass.reward = battlePassResult.data.reward;
+                }
+                
+                // Add level up info if present
+                if (battlePassResult.data.level_up) {
+                    response.data.battle_pass.level_up = battlePassResult.data.level_up;
+                }
+            } catch (error) {
+                console.error('Error formatting battle pass response:', error);
+            }
+        }
 
         res.status(200).json(response);
 
@@ -3734,7 +3793,12 @@ router.get('/:userId/battlepass', async (req, res) => {
         }
         
         // Get user's battlepass data
-        const userBattlePass = user.battle_pass || {};
+        const userBattlePass = user.battlePassSummary || {};
+        
+        // Separate claimed rewards into free and elite categories
+        const claimedRewards = userBattlePass.claimed_rewards || [];
+        const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+        const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
         
         // Format response
         const battlePassData = {
@@ -3743,13 +3807,48 @@ router.get('/:userId/battlepass', async (req, res) => {
             start_date: currentBattlePass.start_date,
             end_date: currentBattlePass.end_date,
             max_level: currentBattlePass.max_level,
-            user_level: userBattlePass.level || 1,
-            current_xp: userBattlePass.xp || 0,
-            is_elite: user.elite_pass && user.elite_pass.active,
+            user_level: userBattlePass.current_level || 1,
+            current_xp: userBattlePass.current_xp || 0,
+            is_elite: userBattlePass.is_elite || false,
+            leveled_up: false, // Default to false
+            completed_levels: {
+                count: userBattlePass.current_level > 1 ? userBattlePass.current_level - 1 : 0,
+                levels: Array.from({length: Math.max(0, userBattlePass.current_level - 1)}, (_, i) => i + 1),
+                total_xp_earned: userBattlePass.current_level > 1 ? 
+                    currentBattlePass.level_thresholds.slice(0, userBattlePass.current_level - 1).reduce((sum, xp) => sum + xp, 0) : 0
+            },
+            current_level_progress: {
+                xp_required: currentBattlePass.level_thresholds[userBattlePass.current_level - 1] || 500,
+                xp_earned: userBattlePass.current_xp || 0,
+                xp_remaining: Math.max(0, (currentBattlePass.level_thresholds[userBattlePass.current_level - 1] || 500) - (userBattlePass.current_xp || 0)),
+                progress_percentage: Math.min(100, Math.floor(((userBattlePass.current_xp || 0) / (currentBattlePass.level_thresholds[userBattlePass.current_level - 1] || 500)) * 100))
+            },
+            uncollected_rewards: currentBattlePass.free_rewards
+                .filter(reward => reward.level <= userBattlePass.current_level)
+                .filter(reward => !claimedFreeRewards.some(claimed => claimed.level === reward.level))
+                .map(reward => reward.level)
+                .concat(
+                    userBattlePass.is_elite ? 
+                    currentBattlePass.elite_rewards
+                        .filter(reward => reward.level <= userBattlePass.current_level)
+                        .filter(reward => !claimedEliteRewards.some(claimed => claimed.level === reward.level))
+                        .map(reward => reward.level) : []
+                ),
             free_rewards: currentBattlePass.free_rewards || [],
             elite_rewards: currentBattlePass.elite_rewards || [],
-            claimed_rewards: userBattlePass.claimed_rewards || []
+            claimed_rewards: userBattlePass.claimed_rewards_formatted || {
+                free: claimedFreeRewards,
+                elite: claimedEliteRewards
+            }
         };
+        
+        // Only add claimed_rewards if there are any
+        if (claimedFreeRewards.length > 0 || claimedEliteRewards.length > 0) {
+            battlePassData.claimed_rewards = {
+                free: claimedFreeRewards,
+                elite: claimedEliteRewards
+            };
+        }
         
         res.status(200).json({
             success: true,

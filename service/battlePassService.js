@@ -162,23 +162,15 @@ async function getUserBattlePassProgress(userId) {
         let totalXpForCurrentLevel = 0;
         
         if (userBattlePass.current_level < battlePass.max_level) {
-            const nextLevel = userBattlePass.current_level + 1;
-            const xpRequirement = battlePass.xp_requirements.find(
-                req => nextLevel >= req.level_start && nextLevel <= req.level_end
-            );
-            
-            if (xpRequirement) {
-                xpToNextLevel = xpRequirement.xp_required;
-            }
-            
-            // Calculate current level XP
+            // Calculate XP for all previous levels
             let totalXpNeeded = 0;
             for (let level = 1; level < userBattlePass.current_level; level++) {
-                const levelXpReq = battlePass.xp_requirements.find(
+                const xpRequirement = battlePass.xp_requirements.find(
                     req => level >= req.level_start && level <= req.level_end
                 );
-                if (levelXpReq) {
-                    totalXpNeeded += levelXpReq.xp_required;
+                
+                if (xpRequirement) {
+                    totalXpNeeded += xpRequirement.xp_required;
                 }
             }
             
@@ -193,6 +185,11 @@ async function getUserBattlePassProgress(userId) {
                 xpToNextLevel = Math.max(0, totalXpForCurrentLevel - xpInCurrentLevel);
             }
         }
+
+        // Separate claimed rewards into free and elite categories
+        const claimedRewards = userBattlePass.claimed_rewards || [];
+        const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+        const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
 
         return {
             success: true,
@@ -213,7 +210,10 @@ async function getUserBattlePassProgress(userId) {
                     last_collected_level: userBattlePass.last_collected_level || 0,
                     xp_to_next_level: xpToNextLevel,
                     total_xp_for_current_level: totalXpForCurrentLevel,
-                    claimed_rewards: userBattlePass.claimed_rewards,
+                    claimed_rewards: {
+                        free: claimedFreeRewards,
+                        elite: claimedEliteRewards
+                    },
                     unclaimed_free_rewards: unclaimedFreeRewards,
                     unclaimed_elite_rewards: unclaimedEliteRewards
                 },
@@ -499,13 +499,16 @@ async function claimBattlePassReward(userId, level, isElite) {
                     break;
                     
                 case 'card_pack':
-                    // Add card pack to user's inventory (this would depend on your existing system)
+                    // Add card pack to user's inventory
                     if (!user.card_packs) user.card_packs = [];
                     user.card_packs.push({
                         pack_id: reward.pack_id,
+                        name: reward.description || 'Battle Pass Pack',
                         obtained_at: new Date(),
-                        source: 'battle_pass'
+                        source: 'battle_pass',
+                        is_opened: false
                     });
+                    user.markModified('card_packs');
                     rewardDetails = { pack_id: reward.pack_id };
                     break;
                     
@@ -513,22 +516,46 @@ async function claimBattlePassReward(userId, level, isElite) {
                     // Add creature to user's inventory
                     if (!user.creature_inventory) user.creature_inventory = [];
                     
-                    // Check if creature already exists in inventory
-                    const existingCreature = user.creature_inventory.find(c => 
-                        c.creature_id && c.creature_id.toString() === reward.creature_id
-                    );
+                    // Prepare creature data with required fields
+                    const creatureData = {
+                        creature_id: reward.creature_id, // String ID is fine for now
+                        name: reward.description || 'Battle Pass Creature',
+                        creature_type: 'battle_pass',
+                        count: 1,
+                        rarity: 'rare',
+                        obtained_at: new Date(),
+                        source: 'battle_pass'
+                    };
                     
-                    if (existingCreature) {
-                        existingCreature.count += 1;
+                    // Try to convert to ObjectId if it's a valid format
+                    if (reward.creature_id && reward.creature_id.match(/^[0-9a-fA-F]{24}$/)) {
+                        creatureData.creature_id = new mongoose.Types.ObjectId(reward.creature_id);
+                        
+                        // Check if creature already exists in inventory
+                        const existingCreature = user.creature_inventory.find(c => 
+                            c.creature_id && c.creature_id.toString() === reward.creature_id
+                        );
+                        
+                        if (existingCreature) {
+                            existingCreature.count += 1;
+                        } else {
+                            user.creature_inventory.push(creatureData);
+                        }
                     } else {
-                        user.creature_inventory.push({
-                            creature_id: mongoose.Types.ObjectId(reward.creature_id),
-                            name: reward.description || 'Battle Pass Creature',
-                            count: 1,
-                            obtained_at: new Date(),
-                            source: 'battle_pass'
-                        });
+                        // If it's not a valid ObjectId, still add to inventory with string ID
+                        // Check if creature already exists by name
+                        const existingCreature = user.creature_inventory.find(c => 
+                            c.name === creatureData.name
+                        );
+                        
+                        if (existingCreature) {
+                            existingCreature.count += 1;
+                        } else {
+                            user.creature_inventory.push(creatureData);
+                        }
                     }
+                    
+                    user.markModified('creature_inventory');
                     rewardDetails = { creature_id: reward.creature_id };
                     break;
                     
@@ -575,6 +602,11 @@ async function claimBattlePassReward(userId, level, isElite) {
             user.markModified('battlePassSummary');
             await user.save();
             
+            // Separate claimed rewards into free and elite categories
+            const claimedRewards = userBattlePass.claimed_rewards || [];
+            const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
+            const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
+            
             return {
                 success: true,
                 message: `Successfully claimed ${isElite ? 'elite' : 'free'} reward for level ${level}`,
@@ -583,17 +615,12 @@ async function claimBattlePassReward(userId, level, isElite) {
                     level,
                     is_elite: isElite,
                     details: rewardDetails,
-                    updated_xp: {
-                        previous_xp: userBattlePass.current_xp,
-                        current_xp: userBattlePass.current_xp,
-                        xp_deducted: 0
-                    },
                     battle_pass: {
                         current_level: userBattlePass.current_level,
-                        last_collected_level: userBattlePass.last_collected_level || 0,
-                        completed_levels: progressDetails.completed_levels,
-                        current_level_progress: progressDetails.current_level_progress,
-                        uncollected_rewards: progressDetails.uncollected_rewards
+                        claimed_rewards: {
+                            free: claimedFreeRewards.map(reward => reward.level),
+                            elite: claimedEliteRewards.map(reward => reward.level)
+                        }
                     }
                 }
             };
