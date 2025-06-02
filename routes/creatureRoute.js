@@ -606,10 +606,9 @@ router.post('/speed-up-upgrade/:userId', async (req, res) => {
         user.creatures[creature1Index].last_upgrade_click_time = pastTime;
         user.creatures[creature2Index].last_upgrade_click_time = pastTime;
         
-        // Set both creatures' progress to 100% to indicate they're ready for collection
-        user.creatures[creature1Index].upgrade_progress = 100;
-        user.creatures[creature2Index].upgrade_progress = 100;
-
+        // DO NOT set progress to 100% - let the collect API handle progress
+        // Keep the existing progress values
+        
         // Update the merging history record if it exists
         if (user.merging_history) {
             const existingMergeIndex = user.merging_history.findIndex(
@@ -618,19 +617,27 @@ router.post('/speed-up-upgrade/:userId', async (req, res) => {
             );
             
             if (existingMergeIndex !== -1) {
-                user.merging_history[existingMergeIndex].progress = 100;
+                // Just update last_update and gems_spent, NOT progress
                 user.merging_history[existingMergeIndex].last_update = now;
                 user.merging_history[existingMergeIndex].gems_spent = (user.merging_history[existingMergeIndex].gems_spent || 0) + gemCost;
             }
             user.markModified('merging_history');
         }
         
-        // Remove from active_merges since it's now ready for collection
+        // Update active_merges - only change the time and can_collect, NOT progress
         if (user.active_merges) {
-            user.active_merges = user.active_merges.filter(
-                m => !((m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
-                      (m.creature1_id === creature2Id && m.creature2_id === creature1Id))
+            const activeMergeIndex = user.active_merges.findIndex(
+                m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                     (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
             );
+            
+            if (activeMergeIndex !== -1) {
+                // Just update the time and can_collect flag, NOT progress
+                user.active_merges[activeMergeIndex].last_update = now;
+                user.active_merges[activeMergeIndex].can_collect = true;
+                // Set the estimated_finish_time to be in the past to show it's ready
+                user.active_merges[activeMergeIndex].estimated_finish_time = pastTime;
+            }
             user.markModified('active_merges');
         }
 
