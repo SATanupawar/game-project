@@ -21,7 +21,8 @@ const {
     mergeCreatures,
     addBoostToUser,
     removeBoostFromUser,
-    getCreatureInventory
+    getCreatureInventory,
+    speedUpCreatureUnlock
 } = require('../service/userService');
 const mongoose = require('mongoose');
 const User = require('../models/user');
@@ -3863,6 +3864,28 @@ router.get('/:userId/battlepass', async (req, res) => {
         });
     }
 });
+
+// Speed up creature unlock with gems
+router.post('/:userId/creature/:creatureId/speedup', async (req, res) => {
+    try {
+        const { userId, creatureId } = req.params;
+        console.log(`Request to speed up creature unlock for user ${userId}, creature ${creatureId}`);
+        
+        // Call the new service function
+        const result = await speedUpCreatureUnlock(userId, creatureId);
+        
+        // Return the result
+        res.status(result.success ? 200 : 400).json(result);
+    } catch (error) {
+        console.error('Error in creature speedup route:', error);
+        res.status(500).json({
+            success: false,
+            message: `Server error: ${error.message}`
+        });
+    }
+});
+
+// Fix building-creature relationships
 
 // At the end of the file, ensure only this line exists:
 module.exports = router;

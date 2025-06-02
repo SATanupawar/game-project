@@ -3560,22 +3560,34 @@ function processUserResponse(user) {
         delete userObj.last_opened_packs;
     }
 
-    // Format battlePassSummary.claimed_rewards into separate free and elite arrays
-    if (userObj.battlePassSummary && Array.isArray(userObj.battlePassSummary.claimed_rewards)) {
+    // Simplify battlePassSummary structure
+    if (userObj.battlePassSummary) {
+        // Get the claimed rewards
         const claimedRewards = userObj.battlePassSummary.claimed_rewards || [];
-        const claimedFreeRewards = claimedRewards.filter(reward => !reward.is_elite);
-        const claimedEliteRewards = claimedRewards.filter(reward => reward.is_elite);
         
-        // Add formatted claimed_rewards_formatted field for API responses
-        userObj.battlePassSummary.claimed_rewards_formatted = {
-            free: claimedFreeRewards,
-            elite: claimedEliteRewards,
-            all: claimedRewards
+        // Extract just the level numbers for free and elite rewards
+        const freeRewardLevels = claimedRewards
+            .filter(reward => !reward.is_elite)
+            .map(reward => reward.level);
+            
+        const eliteRewardLevels = claimedRewards
+            .filter(reward => reward.is_elite)
+            .map(reward => reward.level);
+        
+        // Create simplified battle pass structure
+        const simplifiedBattlePass = {
+            current_level: userObj.battlePassSummary.current_level,
+            current_level_progress: userObj.battlePassSummary.current_level_progress,
+            is_elite: userObj.battlePassSummary.is_elite,
+            claimed_rewards: {
+                free: freeRewardLevels,
+                elite: eliteRewardLevels
+            }
         };
-    }
-    
-    if (userObj.battlepass_rewards) {
-        // Keep the battlepass_rewards field as is
+        
+        // Replace the old complex structure with the simplified one
+        userObj.battle_pass = simplifiedBattlePass;
+        delete userObj.battlePassSummary;
     }
     
     return userObj;
@@ -4950,6 +4962,113 @@ async function getCreatureInventory(userId) {
     }
 }
 
+// Speed up creature unlock using gems
+async function speedUpCreatureUnlock(userId, creatureId) {
+    try {
+        console.log(`Speeding up unlock for creature ${creatureId} for user ${userId}`);
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+        
+        // Check if creating_creatures exists
+        if (!user.creating_creatures || user.creating_creatures.length === 0) {
+            return {
+                success: false,
+                message: 'No creatures in creation queue'
+            };
+        }
+        
+        // Find the specific creature
+        const creatureIndex = user.creating_creatures.findIndex(
+            c => c._id.toString() === creatureId
+        );
+        
+        if (creatureIndex === -1) {
+            return {
+                success: false,
+                message: 'Creature not found in creation queue'
+            };
+        }
+        
+        const creature = user.creating_creatures[creatureIndex];
+        
+        // Check if unlock has started
+        if (!creature.unlock_started) {
+            return {
+                success: false,
+                message: 'Cannot speed up unlock - timer has not been started yet'
+            };
+        }
+        
+        // Calculate remaining time in minutes
+        const currentTime = new Date();
+        const finishTime = new Date(creature.finished_time);
+        
+        if (currentTime >= finishTime) {
+            return {
+                success: false,
+                message: 'Creature is already ready to unlock'
+            };
+        }
+        
+        const remainingTimeMs = finishTime - currentTime;
+        const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+        
+        // Calculate gems required (1 gem per minute is a common pattern)
+        const gemsRequired = Math.max(1, remainingMinutes);
+        
+        // Initialize currency if it doesn't exist
+        if (!user.currency) {
+            user.currency = { gems: 0 };
+        }
+        
+        // Check if user has enough gems
+        if (!user.currency.gems || user.currency.gems < gemsRequired) {
+            return {
+                success: false,
+                message: `Not enough gems. Required: ${gemsRequired}, Available: ${user.currency.gems || 0}`
+            };
+        }
+        
+        // Deduct gems
+        user.currency.gems -= gemsRequired;
+        user.markModified('currency');
+        
+        // Force the creature to be ready now
+        creature.finished_time = currentTime;
+        user.markModified('creating_creatures');
+        
+        // Save user
+        await user.save();
+        
+        return {
+            success: true,
+            message: `Creature unlock accelerated using ${gemsRequired} gems`,
+            data: {
+                creature: {
+                    _id: creature._id,
+                    name: creature.name,
+                    is_ready: true,
+                    gems_used: gemsRequired,
+                    remaining_gems: user.currency.gems
+                }
+            }
+        };
+    } catch (error) {
+        console.error('Error in speedUpCreatureUnlock:', error);
+        return {
+            success: false,
+            message: `Error speeding up creature unlock: ${error.message}`
+        };
+    }
+}
+
 // Export the function
 module.exports = {
     getUserWithDetails,
@@ -4989,6 +5108,7 @@ module.exports = {
     startCreatureUnlock,
     fixBuildingCreatureRelationships,
     updateCreatureSlotsBasedOnSubscription,
-    getCreatureInventory
+    getCreatureInventory,
+    speedUpCreatureUnlock
 };
     
