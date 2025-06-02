@@ -714,6 +714,7 @@ async function claimBattlePassReward(userId, level, isElite) {
                     is_elite: isElite,
                     details: rewardDetails,
                     battle_pass: {
+                        current_level: user.battlePassSummary.current_level,
                         current_level_progress: progressDetails.current_level_progress,
                         claimed_rewards: {
                             free: claimedFreeRewards.map(reward => reward.level),

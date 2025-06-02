@@ -397,6 +397,33 @@ async function mergeCreatures(userId, creature1Id, creature2Id) {
             };
         }
 
+        // Update active_merges array with can_collect flag
+        if (!user.active_merges) {
+            user.active_merges = [];
+        }
+        
+        // Find existing merge entry
+        const existingMergeIndex = user.active_merges.findIndex(
+            m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
+                 (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
+        );
+        
+        // Update existing or create new entry with can_collect = true
+        if (existingMergeIndex !== -1) {
+            user.active_merges[existingMergeIndex].can_collect = true;
+        } else {
+            const now = new Date();
+            user.active_merges.push({
+                creature1_id: creature1Id,
+                creature2_id: creature2Id,
+                start_time: now,
+                can_collect: true,
+                progress: 0
+            });
+        }
+        
+        user.markModified('active_merges');
+
         // Get the base creature data for stats calculation
         console.log(`Attempting to merge creatures:`, {
             creature1: {

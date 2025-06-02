@@ -7,7 +7,7 @@ require('dotenv').config();
 async function fixBattlePassClaimedRewards() {
     try {
         // Get MongoDB URI from environment or use default connection string
-        const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/game-project';
+        const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://awsexos:exos%40aws2025@cluster0.uuvjvcy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
         
         if (!MONGO_URI) {
             throw new Error('MongoDB URI is not defined in environment variables');

@@ -311,11 +311,19 @@ const activeMergeSchema = new mongoose.Schema({
     },
     progress: {
         type: Number,
-        default: 50
+        default: 1
+    },
+    target_level: {
+        type: Number,
+        required: true
     },
     last_update: {
         type: Date,
         default: Date.now
+    },
+    can_collect: {
+        type: Boolean,
+        default: false
     }
 }, { _id: false });
 

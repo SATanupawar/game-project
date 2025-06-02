@@ -833,12 +833,12 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
             waitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
         } else if (creatureTemplate.type === 'epic') {
             waitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
-                } else {
+        } else {
             waitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
         }
 
         // IMPORTANT: Just start the timer, don't complete the merge
-                const now = new Date();
+        const now = new Date();
         
         // Set partner IDs if first time
         if (!creature1.upgrade_partner_id || !creature2.upgrade_partner_id) {
@@ -853,8 +853,8 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
         }
         
         // Always update the timer
-                user.creatures[creature1Index].last_upgrade_click_time = now;
-                user.creatures[creature2Index].last_upgrade_click_time = now;
+        user.creatures[creature1Index].last_upgrade_click_time = now;
+        user.creatures[creature2Index].last_upgrade_click_time = now;
 
         // Update active_merges entry
         if (!user.active_merges) {
@@ -866,42 +866,69 @@ router.put('/:userId/upgrade-milestone', async (req, res) => {
                      (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
             );
             
-            if (existingMergeIndex !== -1) {
+        if (existingMergeIndex !== -1) {
             // Update existing record with new timer
             user.active_merges[existingMergeIndex].start_time = now;
             user.active_merges[existingMergeIndex].estimated_finish_time = 
                 new Date(now.getTime() + (waitTimeMinutes * 60 * 1000));
-            } else {
-            // Create new record
+            user.active_merges[existingMergeIndex].progress = creature1.upgrade_progress || 1;
+            user.active_merges[existingMergeIndex].target_level = targetLevel;
+            user.active_merges[existingMergeIndex].can_collect = true;
+            user.active_merges[existingMergeIndex].last_update = now;
+        } else {
+            // Create new record with only the essential fields
             user.active_merges.push({
-                    creature1_id: creature1Id,
-                    creature1_name: creature1.name,
-                    creature1_level: creature1.level,
-                    creature2_id: creature2Id,
-                    creature2_name: creature2.name,
-                    creature2_level: creature2.level,
+                creature1_id: creature1Id,
+                creature2_id: creature2Id,
                 start_time: now,
                 estimated_finish_time: new Date(now.getTime() + (waitTimeMinutes * 60 * 1000)),
-                    target_level: targetLevel,
+                target_level: targetLevel,
                 progress: creature1.upgrade_progress || 1,
-                is_complete: false,
-                    rarity: creatureTemplate.type,
-                wait_time_minutes: waitTimeMinutes,
-                anima_spent: animaCost
+                can_collect: true,
+                last_update: now
             });
         }
 
         // Save user
         user.markModified('creatures');
-            user.markModified('active_merges');
+        user.markModified('active_merges');
+        
+        // Debug log for can_collect field
+        if (existingMergeIndex !== -1) {
+            console.log(`Updating existing merge: can_collect=${user.active_merges[existingMergeIndex].can_collect}`);
+        } else {
+            console.log(`Created new merge: can_collect=${user.active_merges[user.active_merges.length - 1].can_collect}`);
+        }
+        
         await user.save();
+        
+        // After saving, use findOneAndUpdate to explicitly set the can_collect field in the database
+        if (existingMergeIndex !== -1) {
+            await User.findOneAndUpdate(
+                { 
+                    userId: userId,
+                    "active_merges.creature1_id": creature1Id,
+                    "active_merges.creature2_id": creature2Id
+                },
+                { $set: { "active_merges.$.can_collect": true } }
+            );
+            console.log("Directly set can_collect using findOneAndUpdate for existing merge");
+        } else {
+            // For newly created merges, use the last index
+            const mergeIndex = user.active_merges.length - 1;
+            await User.findOneAndUpdate(
+                { userId: userId },
+                { $set: { [`active_merges.${mergeIndex}.can_collect`]: true } }
+            );
+            console.log(`Directly set can_collect using findOneAndUpdate for new merge at index ${mergeIndex}`);
+        }
         
         // Return success response - ALWAYS return timer started message
         return res.status(200).json({
             success: true,
             message: `Evolution timer started! Wait ${waitTimeMinutes} minutes before collecting.`,
-                anima_cost: animaCost,
-                remaining_anima: user.currency.anima,
+            anima_cost: animaCost,
+            remaining_anima: user.currency.anima,
             timer: {
                 wait_minutes: waitTimeMinutes,
                 start_time: now.toISOString(),
@@ -1193,6 +1220,17 @@ router.post('/:userId/collect-upgrade', async (req, res) => {
                  (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
         ) : -1;
 
+        // Check if can_collect is true
+        if (activeMergeIndex !== -1) {
+            const activeMerge = user.active_merges[activeMergeIndex];
+            if (!activeMerge.can_collect) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This evolution cannot be collected yet. Please start the evolution process first.'
+                });
+            }
+        }
+
         let currentProgress = 0;
         let totalSteps = creatureTemplate.type === 'common' ? 2 : 
                          creatureTemplate.type === 'rare' ? 4 : 
@@ -1203,6 +1241,39 @@ router.post('/:userId/collect-upgrade', async (req, res) => {
         if (activeMergeIndex !== -1) {
             currentProgress = user.active_merges[activeMergeIndex].progress || 0;
             currentStep = user.active_merges[activeMergeIndex].current_step || 1;
+        }
+
+        // ALWAYS check if enough time has passed before allowing collection
+        // Get required wait time based on level and creature type
+        let requiredWaitTimeMinutes;
+        if (creatureTemplate.type === 'common') {
+            requiredWaitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10; // Changed from 5/10/20 to 2/5/10
+        } else if (creatureTemplate.type === 'rare') {
+            requiredWaitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
+        } else if (creatureTemplate.type === 'epic') {
+            requiredWaitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
+        } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
+            requiredWaitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
+        }
+        
+        const requiredWaitTimeSeconds = requiredWaitTimeMinutes * 60;
+        
+        // Check if enough time has passed to collect
+        if (timeSinceLastClick < requiredWaitTimeSeconds) {
+            const remainingSeconds = Math.ceil(requiredWaitTimeSeconds - timeSinceLastClick);
+            const remainingMinutes = Math.floor(remainingSeconds / 60);
+            const remainingSecondsFormatted = remainingSeconds % 60;
+            
+            return res.status(400).json({
+                success: false,
+                message: `Need to wait ${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')} more before collecting`,
+                remaining_time: `${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')}`,
+                progress: {
+                    current: currentProgress,
+                    total: 100,
+                    percentage: `${currentProgress}%`
+                }
+            });
         }
 
         // Generate random progress based on creature rarity and current progress
@@ -1230,45 +1301,6 @@ router.post('/:userId/collect-upgrade', async (req, res) => {
         const newProgress = Math.min(100, currentProgress + progressIncrement);
         const isComplete = newProgress >= 100;
         
-        // Check if wait time has completed for collection
-        if (!isComplete) {
-            // If the evolution is not complete yet, check if we can collect now
-            const now = new Date();
-            const timeSinceLastClick = lastClickTime ? (now - new Date(lastClickTime)) / 1000 : 0; // in seconds
-            
-            // Get required wait time based on level and creature type
-            let requiredWaitTimeMinutes;
-            if (creatureTemplate.type === 'common') {
-                requiredWaitTimeMinutes = targetLevel === 11 ? 2 : targetLevel === 21 ? 5 : 10; // Changed from 5/10/20 to 2/5/10
-            } else if (creatureTemplate.type === 'rare') {
-                requiredWaitTimeMinutes = targetLevel === 11 ? 30 : targetLevel === 21 ? 60 : 90;
-            } else if (creatureTemplate.type === 'epic') {
-                requiredWaitTimeMinutes = targetLevel === 11 ? 60 : targetLevel === 21 ? 120 : 240;
-            } else if (creatureTemplate.type === 'legendary' || creatureTemplate.type === 'elite') {
-                requiredWaitTimeMinutes = targetLevel === 11 ? 240 : targetLevel === 21 ? 480 : 1440;
-            }
-            
-            const requiredWaitTimeSeconds = requiredWaitTimeMinutes * 60;
-            
-            // Check if enough time has passed to collect
-            if (timeSinceLastClick < requiredWaitTimeSeconds) {
-                const remainingSeconds = Math.ceil(requiredWaitTimeSeconds - timeSinceLastClick);
-                const remainingMinutes = Math.floor(remainingSeconds / 60);
-                const remainingSecondsFormatted = remainingSeconds % 60;
-                
-                return res.status(400).json({
-                    success: false,
-                    message: `Need to wait ${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')} more before collecting`,
-                    remaining_time: `${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')}`,
-                    progress: {
-                        current: newProgress,
-                        total: 100,
-                        percentage: `${newProgress}%`
-                    }
-                });
-            }
-        }
-
         // If we get here, either the evolution is complete or we've waited enough time to collect
 
         // IMPORTANT: Do NOT reset the lastClickTime here, as that's only done in the evolve API
@@ -1277,15 +1309,33 @@ router.post('/:userId/collect-upgrade', async (req, res) => {
 
         // Update the active merge record
         if (activeMergeIndex !== -1) {
+            // Update individual fields to maintain schema validation
             user.active_merges[activeMergeIndex].progress = newProgress;
-            // IMPORTANT: Don't change start_time, only update last_update
             user.active_merges[activeMergeIndex].last_update = now;
+            user.active_merges[activeMergeIndex].can_collect = false;
         }
         
         // Also update the creature's progress
         user.creatures[creature1Index].upgrade_progress = newProgress;
         user.creatures[creature2Index].upgrade_progress = newProgress;
         user.markModified('creatures');
+        user.markModified('active_merges');
+        
+        // Save the user
+        await user.save();
+        
+        // After saving, use findOneAndUpdate to explicitly set the can_collect field to false in the database
+        if (activeMergeIndex !== -1) {
+            await User.findOneAndUpdate(
+                { 
+                    userId: userId,
+                    "active_merges.creature1_id": creature1Id,
+                    "active_merges.creature2_id": creature2Id
+                },
+                { $set: { "active_merges.$.can_collect": false } }
+            );
+            console.log("Directly set can_collect to false using findOneAndUpdate for existing merge");
+        }
         
         // Update the merging history record
         const existingMergeIndex = user.merging_history ? user.merging_history.findIndex(
@@ -1937,6 +1987,7 @@ router.get('/:userId/active-merges', async (req, res) => {
                         formatted: `${remainingMinutes}:${remainingSecondsFormatted.toString().padStart(2, '0')}`
                     },
                     is_ready_to_collect: isReadyToCollect,
+                    can_collect: merge.can_collect || false,
                     status: 'active'
                 };
             } catch (error) {
@@ -2111,16 +2162,22 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
 
         // Get active merge record for additional details
         let activeMergeRecord = null;
+        let canCollectFromActiveRecord = false;
         if (user.active_merges) {
             activeMergeRecord = user.active_merges.find(
                 m => (m.creature1_id === creature1Id && m.creature2_id === creature2Id) ||
                      (m.creature1_id === creature2Id && m.creature2_id === creature1Id)
             );
+            
+            // Get can_collect status from active merge record
+            if (activeMergeRecord) {
+                canCollectFromActiveRecord = activeMergeRecord.can_collect || false;
+            }
         }
 
         // Combine progress information
         const totalProgress = currentProgress;
-        const canCollect = isReady;
+        const canCollect = isReady && canCollectFromActiveRecord;
         const canEvolve = currentProgress > 0 && currentProgress < 100;
 
         // Determine gem cost based on rarity
@@ -2170,7 +2227,8 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
                 required_wait_time_minutes: requiredWaitTimeMinutes
             },
             gems_required_to_speedup: gemCost,
-            is_ready: isReady
+            is_ready: isReady,
+            can_collect: canCollectFromActiveRecord
         });
     } catch (error) {
         console.error('Error checking upgrade progress:', error);

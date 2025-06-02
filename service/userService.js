@@ -4017,6 +4017,18 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             user.creating_creatures = [];
         }
         
+        // Validate all existing creatures in the array to prevent validation errors
+        if (Array.isArray(user.creating_creatures)) {
+            user.creating_creatures.forEach((creature, index) => {
+                // Check and set required fields if missing
+                if (!creature.creature_type) creature.creature_type = "unknown";
+                if (!creature.name) creature.name = "Unknown Creature";
+                if (!creature.unlock_time) creature.unlock_time = 10;
+                if (!creature.anima_cost) creature.anima_cost = 100;
+            });
+            user.markModified('creating_creatures');
+        }
+        
         // Store the unlockTimeMinutes, but don't start the timer yet
         const unlockTimeMinutes = creatureTemplate.unlock_time || 10;
         
@@ -4032,21 +4044,21 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
         const creatureDoc = {
             _id: new mongoose.Types.ObjectId(),
             creature_id: creatureTemplate._id,
-            creature_type: creatureTemplate.creature_type, // Use the correct category type (Draconic/Beast/Fractal)
-            creature_Id_reference: creatureTemplate.creature_Id, // Store the reference to creature_Id
-            name: creatureTemplate.name,
-            unlock_time: unlockTimeMinutes,
+            creature_type: creatureTemplate.creature_type || "unknown", // Ensure default value
+            creature_Id_reference: creatureTemplate.creature_Id, 
+            name: creatureTemplate.name || "Unknown Creature", // Ensure default value
+            unlock_time: unlockTimeMinutes || 10, // Ensure default value
             unlock_started: false,
             started_time: placeholderFutureDate, // Placeholder until unlock is started
             finished_time: placeholderFutureDate, // Placeholder until unlock is started
             level: 1,
-            base_attack: creatureTemplate.base_attack,
-            base_health: creatureTemplate.base_health,
-            gold_coins: creatureTemplate.gold_coins,
+            base_attack: creatureTemplate.base_attack || 10,
+            base_health: creatureTemplate.base_health || 100,
+            gold_coins: creatureTemplate.gold_coins || 10,
             arcane_energy: creatureTemplate.arcane_energy || 99, // Add arcane_energy with default fallback
             image: creatureTemplate.image || 'default.png',
             description: creatureTemplate.description || '',
-            anima_cost: animaCost,
+            anima_cost: animaCost || 100, // Ensure default value
             slot_number: parseInt(slotNumber) || 1,
             // Add additional stats
             critical_damage: creatureTemplate.critical_damage || 100,
