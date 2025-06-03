@@ -274,56 +274,94 @@ router.post('/random-chest', async (req, res) => {
             return res.status(404).json({ msg: 'User not found' });
         }
         
-        // Get the three chest types (assuming they exist)
-        const chestTypes = await ChestCard.find().limit(3);
+        // Check if user already has maximum number of chests (4)
+        const MAX_CHESTS = 4;
+        if (user.chests && user.chests.length >= MAX_CHESTS) {
+            return res.status(400).json({ 
+                msg: "Maximum chest limit reached",
+                current: user.chests.length,
+                max: MAX_CHESTS
+            });
+        }
+        
+        // Get all chest types
+        const chestTypes = await ChestCard.find();
         
         if (chestTypes.length < 1) {
             return res.status(404).json({ msg: 'No chest types found' });
         }
         
-        // Generate a random number between 0 and 100
-        const randomNumber = Math.random() * 101;
+        // Find chests by type
+        let commonChest = chestTypes.find(chest => chest.type === 'common');
+        let rareChest = chestTypes.find(chest => chest.type === 'rare');
+        let epicChest = chestTypes.find(chest => chest.type === 'epic');
         
-        // Choose a chest card based on the random number
+        // Use direct probability approach - 75% common, 20% rare, 5% epic
+        const randomValue = Math.random() * 100; // 0-100
         let selectedChest = null;
-        let cumulativeProbability = 0;
         
-        for (const chest of chestTypes) {
-            cumulativeProbability += chest.drop_chance;
-            if (randomNumber <= cumulativeProbability) {
-                selectedChest = chest;
-                break;
-            }
-        }
-        
-        // If no chest was selected (e.g., if drop_chance values don't sum to 100),
-        // select the first chest as a fallback
-        if (!selectedChest && chestTypes.length > 0) {
+        // Select chest based on the specified probabilities
+        if (randomValue < 5 && epicChest) {
+            // 5% chance for Epic (0-4.99)
+            selectedChest = epicChest;
+            console.log(`Selected EPIC chest (${randomValue} < 5)`);
+        } else if (randomValue < 25 && rareChest) {
+            // 20% chance for Rare (5-24.99)
+            selectedChest = rareChest;
+            console.log(`Selected RARE chest (5 <= ${randomValue} < 25)`);
+        } else if (commonChest) {
+            // 75% chance for Common (25-99.99)
+            selectedChest = commonChest;
+            console.log(`Selected COMMON chest (${randomValue} >= 25)`);
+        } else {
+            // Emergency fallback if specific chest types not found
             selectedChest = chestTypes[0];
         }
         
+        if (!selectedChest) {
+            return res.status(500).json({ msg: 'Failed to select a chest' });
+        }
+        
+        // Create a unique MongoDB ObjectId for this chest
+        const objectId = new mongoose.Types.ObjectId();
+        
         // Add the selected chest to the user's chest array
-        user.chests.push({
+        const newUserChest = {
+            _id: objectId,
+            object_id: objectId.toString(),
             chest_id: selectedChest._id,
-            name: selectedChest.name,
+            name: selectedChest.chest_id || selectedChest.name,
+            type: selectedChest.type,
             rarity: selectedChest.rarity,
-            unlock_time: new Date(Date.now() + selectedChest.unlock_time_minutes * 60000),
+            unlock_time: null,  // Set to null initially
+            unlock_time_minutes: selectedChest.unlock_time_minutes,
             is_unlocked: false,
             is_claimed: false,
             obtained_at: new Date()
-        });
+        };
+        
+        user.chests.push(newUserChest);
         
         await user.save();
         
-        // Return only the chest ID to the user
-        res.json({ 
+        // Return the chest details
+        return res.json({
             chest_id: selectedChest._id,
-            name: selectedChest.name,
-            rarity: selectedChest.rarity
+            object_id: objectId.toString(),
+            name: selectedChest.chest_id || selectedChest.name,
+            type: selectedChest.type,
+            rarity: selectedChest.rarity,
+            unlock_time: null,
+            unlock_time_minutes: selectedChest.unlock_time_minutes,
+            is_unlocked: false,
+            is_claimed: false,
+            obtained_at: newUserChest.obtained_at,
+            chests_count: user.chests.length,
+            max_chests: MAX_CHESTS
         });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error('Error in random-chest POST:', err.message);
+        res.status(500).send('Server Error: ' + err.message);
     }
 });
 
@@ -350,14 +388,10 @@ router.get('/random-chest/:userId', async (req, res) => {
                 return res.status(404).json({ msg: 'No chest types found' });
             }
             
-            // Find each chest type by ID
-            const COMMON_CHEST_ID = '6808c9d4f68417b07ab3c494'; // 80%
-            const RARE_CHEST_ID = '6808c9d4f68417b07ab3c495';   // 15%
-            const EPIC_CHEST_ID = '6808c9d4f68417b07ab3c496';   // 5%
-            
-            let commonChest = chestTypes.find(chest => chest._id.toString() === COMMON_CHEST_ID);
-            let rareChest = chestTypes.find(chest => chest._id.toString() === RARE_CHEST_ID);
-            let epicChest = chestTypes.find(chest => chest._id.toString() === EPIC_CHEST_ID);
+            // Find chests by type instead of ID
+            let commonChest = chestTypes.find(chest => chest.type === 'common');
+            let rareChest = chestTypes.find(chest => chest.type === 'rare');
+            let epicChest = chestTypes.find(chest => chest.type === 'epic');
             
             // Generate selection but don't save
             const randomValue = Math.random() * 100;
@@ -365,7 +399,7 @@ router.get('/random-chest/:userId', async (req, res) => {
             
             if (randomValue < 5 && epicChest) {
                 selectedChest = epicChest;
-            } else if (randomValue < 20 && rareChest) {
+            } else if (randomValue < 25 && rareChest) {
                 selectedChest = rareChest;
             } else if (commonChest) {
                 selectedChest = commonChest;
@@ -400,23 +434,17 @@ router.get('/random-chest/:userId', async (req, res) => {
             console.log(`ID: ${chest._id}, Type: ${chest.type}, Chest ID: ${chest.chest_id}, Unlock time: ${chest.unlock_time_minutes} minutes`);
         });
         
-        // Find each chest type by ID - THIS IS CRITICAL
-        // Important: these IDs should exactly match what's in your database
-        const COMMON_CHEST_ID = '6808c9d4f68417b07ab3c494'; // 80%
-        const RARE_CHEST_ID = '6808c9d4f68417b07ab3c495';   // 15%
-        const EPIC_CHEST_ID = '6808c9d4f68417b07ab3c496';   // 5%
+        // Find chests by type instead of using hardcoded IDs
+        let commonChest = chestTypes.find(chest => chest.type === 'common');
+        let rareChest = chestTypes.find(chest => chest.type === 'rare');
+        let epicChest = chestTypes.find(chest => chest.type === 'epic');
         
-        // Find chest by ID instead of type which might be unreliable
-        let commonChest = chestTypes.find(chest => chest._id.toString() === COMMON_CHEST_ID);
-        let rareChest = chestTypes.find(chest => chest._id.toString() === RARE_CHEST_ID);
-        let epicChest = chestTypes.find(chest => chest._id.toString() === EPIC_CHEST_ID);
-        
-        console.log('Found chests by ID:');
+        console.log('Found chests by type:');
         console.log('Common chest:', commonChest ? commonChest._id : 'Not found');
         console.log('Rare chest:', rareChest ? rareChest._id : 'Not found');
         console.log('Epic chest:', epicChest ? epicChest._id : 'Not found');
         
-        // Use direct probability approach - 80% common, 15% rare, 5% epic
+        // Use direct probability approach - 75% common, 20% rare, 5% epic
         const randomValue = Math.random() * 100; // 0-100
         let selectedChest = null;
         
@@ -425,14 +453,14 @@ router.get('/random-chest/:userId', async (req, res) => {
             // 5% chance for Epic (0-4.99)
             selectedChest = epicChest;
             console.log(`Selected EPIC chest (${randomValue} < 5)`);
-        } else if (randomValue < 20 && rareChest) {
-            // 15% chance for Rare (5-19.99)
+        } else if (randomValue < 25 && rareChest) {
+            // 20% chance for Rare (5-24.99)
             selectedChest = rareChest;
-            console.log(`Selected RARE chest (5 <= ${randomValue} < 20)`);
+            console.log(`Selected RARE chest (5 <= ${randomValue} < 25)`);
         } else if (commonChest) {
-            // 80% chance for Common (20-99.99)
+            // 75% chance for Common (25-99.99)
             selectedChest = commonChest;
-            console.log(`Selected COMMON chest (${randomValue} >= 20)`);
+            console.log(`Selected COMMON chest (${randomValue} >= 25)`);
         } else {
             // Emergency fallback if specific chest types not found
             console.log('WARNING: Could not find expected chest types, using fallback selection');
@@ -1158,17 +1186,12 @@ router.get('/preview-chest/:userId', async (req, res) => {
             console.log(`ID: ${chest._id}, Type: ${chest.type}, Chest ID: ${chest.chest_id}, Unlock time: ${chest.unlock_time_minutes} minutes`);
         });
         
-        // Find each chest type by ID - THIS IS CRITICAL
-        const COMMON_CHEST_ID = '6808c9d4f68417b07ab3c494'; // 80%
-        const RARE_CHEST_ID = '6808c9d4f68417b07ab3c495';   // 15%
-        const EPIC_CHEST_ID = '6808c9d4f68417b07ab3c496';   // 5%
+        // Find chests by type instead of using hardcoded IDs
+        let commonChest = chestTypes.find(chest => chest.type === 'common');
+        let rareChest = chestTypes.find(chest => chest.type === 'rare');
+        let epicChest = chestTypes.find(chest => chest.type === 'epic');
         
-        // Find chest by ID
-        let commonChest = chestTypes.find(chest => chest._id.toString() === COMMON_CHEST_ID);
-        let rareChest = chestTypes.find(chest => chest._id.toString() === RARE_CHEST_ID);
-        let epicChest = chestTypes.find(chest => chest._id.toString() === EPIC_CHEST_ID);
-        
-        // Use direct probability approach - 80% common, 15% rare, 5% epic
+        // Use direct probability approach - 75% common, 20% rare, 5% epic
         const randomValue = Math.random() * 100; // 0-100
         let selectedChest = null;
         
@@ -1177,14 +1200,14 @@ router.get('/preview-chest/:userId', async (req, res) => {
             // 5% chance for Epic (0-4.99)
             selectedChest = epicChest;
             console.log(`Preview EPIC chest (${randomValue} < 5)`);
-        } else if (randomValue < 20 && rareChest) {
-            // 15% chance for Rare (5-19.99)
+        } else if (randomValue < 25 && rareChest) {
+            // 20% chance for Rare (5-24.99)
             selectedChest = rareChest;
-            console.log(`Preview RARE chest (5 <= ${randomValue} < 20)`);
+            console.log(`Preview RARE chest (5 <= ${randomValue} < 25)`);
         } else if (commonChest) {
-            // 80% chance for Common (20-99.99)
+            // 75% chance for Common (25-99.99)
             selectedChest = commonChest;
-            console.log(`Preview COMMON chest (${randomValue} >= 20)`);
+            console.log(`Preview COMMON chest (${randomValue} >= 25)`);
         } else {
             // Emergency fallback if specific chest types not found
             console.log('WARNING: Could not find expected chest types, using fallback selection for preview');

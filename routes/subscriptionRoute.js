@@ -39,6 +39,40 @@ router.post('/', async (req, res) => {
     }
 });
 
+// Create a new subscription with userId in URL
+router.post('/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { subscriptionType, paymentId } = req.body;
+        
+        if (!userId || !subscriptionType) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID and subscription type are required'
+            });
+        }
+        
+        const result = await subscriptionService.createSubscription(
+            userId,
+            subscriptionType,
+            paymentId
+        );
+        
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        
+        res.status(201).json(result);
+    } catch (error) {
+        console.error('Error creating subscription:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error creating subscription',
+            error: error.message
+        });
+    }
+});
+
 // Get user's subscription status
 router.get('/:userId', async (req, res) => {
     try {

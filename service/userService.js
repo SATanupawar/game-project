@@ -5006,22 +5006,31 @@ async function speedUpCreatureUnlock(userId, creatureId) {
             };
         }
         
-        // Calculate remaining time in minutes
-        const currentTime = new Date();
-        const finishTime = new Date(creature.finished_time);
+        // Get creature's rarity to determine gem cost
+        const Creature = mongoose.model('Creature');
+        const creatureTemplate = await Creature.findById(creature.creature_id);
         
-        if (currentTime >= finishTime) {
+        if (!creatureTemplate) {
             return {
                 success: false,
-                message: 'Creature is already ready to unlock'
+                message: 'Creature template not found'
             };
         }
         
-        const remainingTimeMs = finishTime - currentTime;
-        const remainingMinutes = Math.ceil(remainingTimeMs / 60000);
+        // Set gem cost based on rarity
+        let gemsRequired;
+        const rarity = creatureTemplate.type.toLowerCase();
         
-        // Calculate gems required (1 gem per minute is a common pattern)
-        const gemsRequired = Math.max(1, remainingMinutes);
+        if (rarity === 'common' || rarity === 'rare') {
+            gemsRequired = 100;
+        } else if (rarity === 'epic') {
+            gemsRequired = 200;
+        } else if (rarity === 'elite' || rarity === 'legendary') {
+            gemsRequired = 500;
+        } else {
+            // Fallback for unknown rarity
+            gemsRequired = 100;
+        }
         
         // Initialize currency if it doesn't exist
         if (!user.currency) {
@@ -5041,7 +5050,7 @@ async function speedUpCreatureUnlock(userId, creatureId) {
         user.markModified('currency');
         
         // Force the creature to be ready now
-        creature.finished_time = currentTime;
+        creature.finished_time = new Date();
         user.markModified('creating_creatures');
         
         // Save user
@@ -5054,6 +5063,7 @@ async function speedUpCreatureUnlock(userId, creatureId) {
                 creature: {
                     _id: creature._id,
                     name: creature.name,
+                    rarity: rarity,
                     is_ready: true,
                     gems_used: gemsRequired,
                     remaining_gems: user.currency.gems

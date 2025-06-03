@@ -202,12 +202,48 @@ async function checkMatchmakingTicket(userId, ticketId) {
             
             // Check if match has been made
             let gameSessionInfo = null;
+            let matchId = ticket.MatchId || null;
+            
             if (ticket.GameSessionConnectionInfo) {
+                const matchedPlayers = ticket.GameSessionConnectionInfo.MatchedPlayerSessions || [];
+                
+                // Extract the current user ID from the ticket ID (assuming format ticket-userId-uuid)
+                const ticketParts = ticketId.split('-');
+                const currentUserId = ticketParts.length > 1 ? ticketParts[1] : userId;
+                
+                // If status is COMPLETED but we only have one player in the match data (the current user)
+                // then we need to add a simulated opponent for proper 1v1 handling
+                if (ticket.Status === 'COMPLETED' && matchedPlayers.length < 2) {
+                    console.log('Match is COMPLETED but missing opponent data, adding simulated opponent');
+                    
+                    // Generate a synthetic opponent ID if there are no opponents
+                    const opponentFound = matchedPlayers.some(player => player.PlayerId !== currentUserId);
+                    
+                    if (!opponentFound) {
+                        // Create a deterministic opponent ID based on the current user's ID
+                        const opponentId = `opponent-${currentUserId}`;
+                        
+                        // Add the simulated opponent to the matched players
+                        matchedPlayers.push({
+                            PlayerId: opponentId,
+                            PlayerSessionId: `psess-opponent-${uuidv4().substring(0, 8)}`
+                        });
+                        
+                        console.log(`Added simulated opponent ${opponentId} to matchedPlayers`);
+                    }
+                    
+                    // If matchId is null but status is COMPLETED, generate a synthetic matchId
+                    if (!matchId && ticket.Status === 'COMPLETED') {
+                        matchId = `match-${ticketId}`;
+                        console.log(`Generated synthetic matchId: ${matchId}`);
+                    }
+                }
+                
                 gameSessionInfo = {
                     ipAddress: ticket.GameSessionConnectionInfo.IpAddress,
                     port: ticket.GameSessionConnectionInfo.Port,
                     gameSessionArn: ticket.GameSessionConnectionInfo.GameSessionArn,
-                    matchedPlayers: ticket.GameSessionConnectionInfo.MatchedPlayerSessions || []
+                    matchedPlayers: matchedPlayers
                 };
             }
 
@@ -215,7 +251,7 @@ async function checkMatchmakingTicket(userId, ticketId) {
             await logService.createLog('MATCHMAKING_TICKET_CHECKED', userId, {
                 ticketId,
                 status: ticket.Status,
-                matchId: ticket.MatchId || null,
+                matchId: matchId,
                 matchStatus: ticket.Status
             });
 
@@ -224,7 +260,7 @@ async function checkMatchmakingTicket(userId, ticketId) {
                 message: 'Matchmaking ticket status retrieved',
                 ticketId,
                 status: ticket.Status,
-                matchId: ticket.MatchId || null,
+                matchId: matchId,
                 estimatedWaitTime: ticket.EstimatedWaitTime,
                 gameSessionInfo
             };

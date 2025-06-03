@@ -117,6 +117,40 @@ router.post('/battle-pass/claim-reward', async (req, res) => {
     }
 });
 
+// Claim battle pass reward with userId in URL
+router.post('/battle-pass/:userId/claim-reward', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { level, isElite } = req.body;
+        
+        if (!userId || !level) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID and level are required'
+            });
+        }
+        
+        const result = await battlePassService.claimBattlePassReward(
+            userId,
+            parseInt(level),
+            isElite === true || isElite === "true" || isElite === 1 || isElite === "1"
+        );
+        
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error claiming battle pass reward:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error claiming battle pass reward',
+            error: error.message
+        });
+    }
+});
+
 // Upgrade to elite battle pass
 router.post('/battle-pass/upgrade-elite', async (req, res) => {
     try {
