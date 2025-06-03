@@ -211,10 +211,14 @@ async function checkMatchmakingTicket(userId, ticketId) {
                 const ticketParts = ticketId.split('-');
                 const currentUserId = ticketParts.length > 1 ? ticketParts[1] : userId;
                 
-                // If status is COMPLETED but we only have one player in the match data (the current user)
-                // then we need to add a simulated opponent for proper 1v1 handling
-                if (ticket.Status === 'COMPLETED' && matchedPlayers.length < 2) {
-                    console.log('Match is COMPLETED but missing opponent data, adding simulated opponent');
+                // Check if we have real match data from GameLift
+                const hasRealMatchData = ticket.GameSessionConnectionInfo && 
+                                         ticket.GameSessionConnectionInfo.GameSessionArn;
+
+                // Only add simulated data if we don't have real data and are in test mode
+                if (!hasRealMatchData && (isTestMode || process.env.TEST_MODE === 'true') && 
+                    ticket.Status === 'COMPLETED' && matchedPlayers.length < 2) {
+                    console.log('Adding simulated opponent for testing (no real match data found)');
                     
                     // Generate a synthetic opponent ID if there are no opponents
                     const opponentFound = matchedPlayers.some(player => player.PlayerId !== currentUserId);
@@ -231,12 +235,18 @@ async function checkMatchmakingTicket(userId, ticketId) {
                         
                         console.log(`Added simulated opponent ${opponentId} to matchedPlayers`);
                     }
-                    
-                    // If matchId is null but status is COMPLETED, generate a synthetic matchId
-                    if (!matchId && ticket.Status === 'COMPLETED') {
-                        matchId = `match-${ticketId}`;
-                        console.log(`Generated synthetic matchId: ${matchId}`);
-                    }
+                }
+                
+                // Never override real matchId from GameLift
+                if (!matchId && hasRealMatchData && ticket.Status === 'COMPLETED') {
+                    // Extract real match ID from GameSessionArn
+                    const arnParts = ticket.GameSessionConnectionInfo.GameSessionArn.split('/');
+                    matchId = arnParts[arnParts.length - 1]; // Last part is the real matchId: 4faff3a7-8f6d-40e5-a96e-9a75178a6afd
+                    console.log(`Using real matchId from GameSessionArn: ${matchId}`);
+                } else if (!hasRealMatchData && (!matchId || matchId === null) && ticket.Status === 'COMPLETED') {
+                    // Only use synthetic ID if we don't have real data
+                    matchId = `match-${ticketId}`;
+                    console.log(`Generated synthetic matchId: ${matchId} (no real match ID found)`);
                 }
                 
                 gameSessionInfo = {
