@@ -255,6 +255,45 @@ async function checkMatchmakingTicket(userId, ticketId) {
                     gameSessionArn: ticket.GameSessionConnectionInfo.GameSessionArn,
                     matchedPlayers: matchedPlayers
                 };
+
+                if (matchId && hasRealMatchData) {
+                    try {
+                        const describeParams = {
+                            GameSessionId: ticket.GameSessionConnectionInfo.GameSessionArn
+                        };
+                        
+                        const gameSessionDetails = await gameLift.describeGameSessions(describeParams).promise();
+                        
+                        if (gameSessionDetails.GameSessions && gameSessionDetails.GameSessions.length > 0) {
+                            const session = gameSessionDetails.GameSessions[0];
+                            
+                            // Get matchmaking data from GameSession
+                            if (session.MatchmakerData) {
+                                const matchData = JSON.parse(session.MatchmakerData);
+                                // Remove storing teams in gameSessionInfo
+                                // gameSessionInfo.teams = matchData.teams || [];
+                                
+                                // Update matchedPlayers with players from all teams
+                                if (matchData.teams) {
+                                    matchData.teams.forEach(team => {
+                                        team.players.forEach(player => {
+                                            // Case insensitive comparison and properly formatted playerId
+                                            if (!matchedPlayers.some(p => 
+                                                p.PlayerId.toLowerCase() === player.playerId.toLowerCase())) {
+                                                matchedPlayers.push({
+                                                    PlayerId: player.playerId,  // Keep original casing from the data
+                                                    PlayerSessionId: `psess-${uuidv4().substring(0, 8)}`
+                                                });
+                                            }
+                                        });
+                                    });
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Failed to get game session details: ${error.message}`);
+                    }
+                }
             }
 
             // Log the ticket status check
