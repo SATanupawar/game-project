@@ -2398,11 +2398,17 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
         // Handle removing creatures
         if (removeCreatures && removeCreatures.length > 0) {
             for (const creatureId of removeCreatures) {
+                // Skip null or undefined creatureIds
+                if (!creatureId) {
+                    console.warn('Skipping null or undefined creatureId in removeCreatures');
+                    continue;
+                }
+                
                 console.log(`Trying to remove creature with ID: ${creatureId}`);
                 
                 // Find the creature in battle_selected_creatures
                 const index = user.battle_selected_creatures.findIndex(
-                    c => (c.creature_id && c.creature_id.toString() === creatureId.toString())
+                    c => (c.creature_id && creatureId && c.creature_id.toString() === creatureId.toString())
                 );
                 
                 console.log(`Found creature at index: ${index}`);
@@ -2415,8 +2421,7 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                     removedCreatures.push({
                         _id: removed.creature_id,
                         name: removed.name,
-                        level: removed.level,
-                        position: removed.position
+                        level: removed.level
                     });
                 } else {
                     console.log(`Creature ${creatureId} not found in battle selection`);
@@ -2433,13 +2438,25 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
             }
 
             for (const creatureId of addCreatures) {
+                // Skip null or undefined creatureIds
+                if (!creatureId) {
+                    console.warn('Skipping null or undefined creatureId in addCreatures');
+                    continue;
+                }
+                
                 console.log(`Adding creature with ID: ${creatureId} (type: ${typeof creatureId})`);
                 
                 // Skip if already in battle selection
                 const alreadyInBattle = user.battle_selected_creatures.some(c => {
-                    const matchById = c.creature_id && c.creature_id.toString() === creatureId.toString();
-                    console.log(`Checking if already in battle: creature_id=${c.creature_id}, match=${matchById}`);
-                    return matchById;
+                    if (!c.creature_id || !creatureId) return false;
+                    try {
+                        const matchById = c.creature_id.toString() === creatureId.toString();
+                        console.log(`Checking if already in battle: creature_id=${c.creature_id}, match=${matchById}`);
+                        return matchById;
+                    } catch (err) {
+                        console.error(`Error comparing creature IDs: ${err.message}`);
+                        return false;
+                    }
                 });
                 
                 if (alreadyInBattle) {
@@ -2450,16 +2467,20 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                 // Find the creature in user's creatures - check both _id and creature_id fields
                 let userCreature = null;
                 
-                // First try matching by _id (exact match)
-                userCreature = user.creatures.find(c => 
-                    c._id && c._id.toString() === creatureId.toString()
-                );
-                
-                // If not found, try matching by creature_id
-                if (!userCreature) {
+                try {
+                    // First try matching by _id (exact match)
                     userCreature = user.creatures.find(c => 
-                        c.creature_id && c.creature_id.toString() === creatureId.toString()
+                        c._id && creatureId && c._id.toString() === creatureId.toString()
                     );
+                    
+                    // If not found, try matching by creature_id
+                    if (!userCreature) {
+                        userCreature = user.creatures.find(c => 
+                            c.creature_id && creatureId && c.creature_id.toString() === creatureId.toString()
+                        );
+                    }
+                } catch (err) {
+                    console.error(`Error finding creature in user's creatures: ${err.message}`);
                 }
 
                 if (!userCreature) {
@@ -2511,7 +2532,11 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                 }
 
                 // Get the actual creature ID to use for database lookup
-                const actualCreatureId = userCreature.creature_id || userCreature._id;
+                const actualCreatureId = userCreature?.creature_id || userCreature?._id;
+                if (!actualCreatureId) {
+                    console.error('Unable to determine actualCreatureId, skipping creature');
+                    continue;
+                }
                 console.log(`Using creature ID ${actualCreatureId} for lookup`);
 
                 // Get full creature details from database
@@ -2527,20 +2552,24 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                     
                     // Try fallback to find by name
                     try {
-                        creatureDetails = await Creature.findOne({ 
-                            name: { $regex: new RegExp('^' + userCreature.name + '$', 'i') }
-                        });
+                        if (userCreature?.name) {
+                            creatureDetails = await Creature.findOne({ 
+                                name: { $regex: new RegExp('^' + userCreature.name + '$', 'i') }
+                            });
+                        } else {
+                            console.warn('Cannot search by name: userCreature.name is undefined');
+                        }
                     } catch (err) {
-                        console.error(`Error looking up creature by name ${userCreature.name}:`, err);
+                        console.error(`Error looking up creature by name ${userCreature?.name}:`, err);
                     }
 
                     if (!creatureDetails) {
-                        console.warn(`Could not find creature template for ${userCreature.name}`);
+                        console.warn(`Could not find creature template for ${userCreature?.name || 'unknown creature'}`);
                         // Continue anyway, using user creature data
                         creatureDetails = {
-                            base_attack: userCreature.attack || userCreature.base_attack || 50,
-                            base_health: userCreature.health || userCreature.base_health || 300,
-                            type: userCreature.creature_type || 'common'
+                            base_attack: userCreature?.attack || userCreature?.base_attack || 50,
+                            base_health: userCreature?.health || userCreature?.base_health || 300,
+                            type: userCreature?.creature_type || 'common'
                         };
                     } else {
                         console.log(`Found creature by name: ${creatureDetails.name}`);
@@ -2574,7 +2603,7 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                 }
                 
                 // Calculate stats with compounding growth
-                for (let level = 1; level < (userCreature.level || 1); level++) {
+                for (let level = 1; level < (userCreature?.level || 1); level++) {
                     attack += Math.round(attack * attackGrowth);
                     health += Math.round(health * healthGrowth);
                 }
@@ -2589,12 +2618,18 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                 // Create the battle creature entry
                 const battleCreature = {
                     creature_id: creatureId,
-                    name: userCreature.name || 'Unknown Creature',
-                    level: userCreature.level || 1,
+                    name: userCreature?.name || 'Unknown Creature',
+                    level: userCreature?.level || 1,
                     type: creatureType,
                     attack: attack,
                     health: health,
-                    position: position
+                    // Add additional properties with values from the source creature
+                    speed: userCreature?.speed || 100,
+                    armor: userCreature?.armor || 10,
+                    critical_damage: userCreature?.critical_damage || 100,
+                    critical_damage_percentage: userCreature?.critical_damage_percentage || 5,
+                    creature_type: userCreature?.creature_type || "Beast"
+                    // Removed: position, image, description
                 };
 
                 console.log('Created battle creature entry:', battleCreature);
@@ -2607,10 +2642,16 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                     _id: creatureId,
                     name: battleCreature.name,
                     level: battleCreature.level,
-                    position: battleCreature.position,
                     type: battleCreature.type,
                     attack: battleCreature.attack,
-                    health: battleCreature.health
+                    health: battleCreature.health,
+                    // Add exact properties from the original creature
+                    speed: battleCreature.speed,
+                    armor: battleCreature.armor,
+                    critical_damage: battleCreature.critical_damage,
+                    critical_damage_percentage: battleCreature.critical_damage_percentage,
+                    creature_type: battleCreature.creature_type
+                    // Removed: position, image, description
                 });
             }
         }
@@ -2637,10 +2678,16 @@ async function updateBattleSelectedCreatures(userIdParam, addCreatures = [], rem
                     _id: c.creature_id,
                     name: c.name,
                     level: c.level,
-                    position: c.position,
                     type: c.type,
                     attack: c.attack,
-                    health: c.health
+                    health: c.health,
+                    // Include all additional properties
+                    speed: c.speed || 100,
+                    armor: c.armor || 100,
+                    critical_damage: c.critical_damage || 100,
+                    critical_damage_percentage: c.critical_damage_percentage || 5,
+                    creature_type: c.creature_type || "Beast"
+                    // Removed: position, image, description
                 })),
                 added: addedCreatures,
                 removed: removedCreatures,

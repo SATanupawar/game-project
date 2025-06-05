@@ -51,6 +51,7 @@ const battlePassRoutes = require('./routes/battlePassRoute');
 const subscriptionRoutes = require('./routes/subscriptionRoute');
 const battlePassProgressRoutes = require('./routes/battlePassProgressRoute');
 const subscriptionService = require('./service/subscriptionService');
+const gameLiftLogsRoutes = require('./routes/logs');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -72,12 +73,16 @@ app.use(express.urlencoded({ extended: true }));
 // Add request logging middleware
 app.use(requestLogger);
 
+// Serve static files from the public directory
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
 // Public routes
 app.use('/api/users', userRoutes); // Registration and user creation should remain public
 app.use('/api/auth', authRoutes); // New auth routes - public access
 app.use('/api/logs', logRoutes); // Logging routes - normally these would be admin-only
 app.use('/api/matchmaking', matchmakingRoutes); // Add matchmaking routes
 app.use('/api/quests', questRoutes); // Quest routes
+app.use('/api', gameLiftLogsRoutes); // GameLift logs route
 
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
@@ -99,6 +104,124 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api', battlePassRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', battlePassProgressRoutes);
+
+// Direct endpoint to get a user's data with battle creatures
+app.get('/api/user/:userId/battle-data', async (req, res) => {
+  try {
+    console.log('Direct battle data route hit', req.params);
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: userId'
+      });
+    }
+
+    // Find user without populate - we'll handle the creature_id manually
+    const user = await User.findOne({ userId });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    console.log('Found user battle creatures:', JSON.stringify(user.battle_selected_creatures || []));
+    
+    // Process user data into response format
+    const processedCreatures = user.battle_selected_creatures.map(creature => {
+      // Simply use the creature_id directly - no need for complex handling
+      return {
+        creature_id: creature.creature_id.toString(), // Convert ObjectId to string
+        name: creature.name,
+        level: creature.level,
+        type: creature.type,
+        attack: creature.attack,
+        health: creature.health,
+        speed: creature.speed || 0,
+        armor: creature.armor || 0,
+        critical_damage: creature.critical_damage || 0,
+        critical_damage_percentage: creature.critical_damage_percentage || 0,
+        creature_type: creature.creature_type || "Beast"
+      };
+    });
+    
+    const userData = {
+      userId: user.userId,
+      username: user.user_name,
+      trophies: user.trophy_count || 0,
+      profilePicture: user.profile_picture || 'default.jpg',
+      level: user.level || 1,
+      title: user.title || '',
+      battle_selected_creatures: processedCreatures
+    };
+    
+    res.status(200).json({
+      success: true,
+      data: userData
+    });
+  } catch (error) {
+    console.error('Error in direct battle data route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error getting battle data: ${error.message}`
+    });
+  }
+});
+
+// Diagnostic endpoint to check the raw user data and creature IDs
+app.get('/api/user/:userId/raw-data', async (req, res) => {
+  try {
+    console.log('Raw data diagnostic endpoint hit', req.params);
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: userId'
+      });
+    }
+
+    // Find user with all fields
+    const user = await User.findOne({ userId });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Show the raw battle_selected_creatures data for debugging
+    console.log('Raw battle_selected_creatures:', JSON.stringify(user.battle_selected_creatures || []));
+    
+    // Get specific details about the creature_id field
+    const creatureDetails = user.battle_selected_creatures.map(creature => ({
+      creature_id: creature.creature_id,
+      creature_id_type: typeof creature.creature_id,
+      creature_id_to_string: creature.creature_id ? creature.creature_id.toString() : null,
+      is_object_id: creature.creature_id instanceof mongoose.Types.ObjectId,
+      has_value: !!creature.creature_id
+    }));
+    
+    console.log('Creature ID details:', JSON.stringify(creatureDetails));
+    
+    // Return full user data and specialized creature_id diagnostics
+    res.status(200).json({
+      success: true,
+      userData: user,
+      creatureDetails
+    });
+  } catch (error) {
+    console.error('Error in raw data diagnostic route:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Error getting raw data: ${error.message}`
+    });
+  }
+});
 
 // Direct creature purchase route to bypass any conflicts with userRoutes
 app.post('/api/user/:userId/creature/purchase', async (req, res) => {
@@ -588,6 +711,11 @@ app.get('/api/users/:userId', async (req, res) => {
 // Basic route
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the Game Backend API' });
+});
+
+// Serve the log downloader HTML page
+app.get('/log-downloader', (req, res) => {
+    res.sendFile(path.join(__dirname, 'download-logs.html'));
 });
 
 // Error handling middleware

@@ -64,7 +64,10 @@ const logSchema = new mongoose.Schema({
             'MATCHMAKING_MATCH_DETAILS_REQUESTED',
             'MATCHMAKING_GAME_SESSION_CREATED',
             'MATCHMAKING_PLAYER_JOINED',
-            'MATCHMAKING_PLAYER_LEFT'
+            'MATCHMAKING_PLAYER_LEFT',
+            
+            // GameLift logs events
+            'GAME_SESSION_LOG_REQUESTED'
         ],
         index: true // For faster queries by eventType
     },

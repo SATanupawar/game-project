@@ -11,7 +11,11 @@ const battleCreatureSchema = new mongoose.Schema({
     type: String,
     attack: Number,
     health: Number,
-    position: Number // Position in battle (0-5), max 6 creatures allowed
+    speed: Number,
+    armor: Number,
+    critical_damage: Number,
+    critical_damage_percentage: Number,
+    creature_type: String
 }, { _id: false }); // Disable _id for embedded documents
 
 // Define schema for user boosts
@@ -311,7 +315,7 @@ const activeMergeSchema = new mongoose.Schema({
     },
     progress: {
         type: Number,
-        default: 1
+        default: 0
     },
     target_level: {
         type: Number,

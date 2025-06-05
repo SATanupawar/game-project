@@ -2234,8 +2234,25 @@ router.post('/:userId/battle-creatures', async (req, res) => {
             removeCreatures || []
         );
         
-        // Return appropriate status based on result
-        if (result.success) {
+        // If successful, use the EXACT same data from added creatures for battle_selected_creatures
+        if (result.success && result.data.added && result.data.added.length > 0) {
+            // Simply use the same exact data from 'added' for 'battle_selected_creatures'
+            result.data.battle_selected_creatures = result.data.added.map(creature => ({
+                _id: creature._id,
+                name: creature.name,
+                level: creature.level,
+                type: creature.type,
+                attack: creature.attack,
+                health: creature.health,
+                speed: creature.speed,
+                armor: creature.armor,
+                critical_damage: creature.critical_damage,
+                critical_damage_percentage: creature.critical_damage_percentage,
+                creature_type: creature.creature_type,
+                image: creature.image,
+                description: creature.description
+            }));
+            
             res.status(200).json(result);
         } else {
             res.status(400).json(result);
@@ -2257,7 +2274,11 @@ router.get('/:userId/battle-creatures', async (req, res) => {
         
         // Find user
         const User = require('../models/user');
-        let user = await User.findOne({ userId });
+        let user = await User.findOne({ userId })
+            .populate({
+                path: 'battle_selected_creatures.creature_id',
+                select: 'speed armor critical_damage critical_damage_percentage creature_Id_reference image description'
+            });
         
         if (!user) {
             return res.status(404).json({
@@ -2272,16 +2293,55 @@ router.get('/:userId/battle-creatures', async (req, res) => {
             await user.save();
         }
         
-        // Format and return the battle creatures
-        const battleCreatures = user.battle_selected_creatures.map(c => ({
-            _id: c.creature_id,
-            name: c.name,
-            level: c.level,
-            position: c.position,
-            type: c.type,
-            attack: c.attack,
-            health: c.health
-        }));
+        // Format and return the battle creatures with enhanced details
+        const battleCreatures = user.battle_selected_creatures.map(creature => {
+            // Get the populated creature document if available
+            const creatureDetails = creature.creature_id && typeof creature.creature_id === 'object' ? 
+                creature.creature_id : {};
+            
+            // Try to find the full creature in the user's creatures
+            const fullCreature = user.creatures && user.creatures.length > 0 ?
+                user.creatures.find(c => 
+                    c._id && creature.creature_id && 
+                    c._id.toString() === creature.creature_id.toString()
+                ) : null;
+            
+            // If we found the full creature in user's collection, use its exact values
+            if (fullCreature) {
+                return {
+                    _id: creature.creature_id?._id || creature.creature_id,
+                    name: fullCreature.name || creature.name,
+                    level: fullCreature.level || creature.level,
+                    type: fullCreature.type || creature.type,
+                    attack: fullCreature.attack || creature.attack,
+                    health: fullCreature.health || creature.health,
+                    speed: fullCreature.speed,
+                    armor: fullCreature.armor,
+                    critical_damage: fullCreature.critical_damage,
+                    critical_damage_percentage: fullCreature.critical_damage_percentage,
+                    creature_type: fullCreature.creature_type,
+                    image: fullCreature.image,
+                    description: fullCreature.description
+                };
+            }
+            
+            // Otherwise, use whatever data is available
+            return {
+                _id: creature.creature_id?._id || creature.creature_id,
+                name: creature.name,
+                level: creature.level,
+                type: creature.type,
+                attack: creature.attack,
+                health: creature.health,
+                speed: creature.speed || creatureDetails.speed || 120,
+                armor: creature.armor || creatureDetails.armor || 10,
+                critical_damage: creature.critical_damage || creatureDetails.critical_damage || 100,
+                critical_damage_percentage: creature.critical_damage_percentage || creatureDetails.critical_damage_percentage || 5,
+                creature_type: creature.creature_type || creatureDetails.creature_type || "Beast",
+                image: creature.image || creatureDetails.image || null,
+                description: creature.description || creatureDetails.description || null
+            };
+        });
         
         res.status(200).json({
             success: true,

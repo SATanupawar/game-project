@@ -1,0 +1,35 @@
+[2025-06-03 15:30:12.543] [INFO] GameLift Server - Server process starting on port 33436
+[2025-06-03 15:30:12.655] [INFO] GameLift Server - Initializing GameLift SDK version 4.0.2
+[2025-06-03 15:30:12.789] [INFO] GameLift Server - Server process registered with GameLift service
+[2025-06-03 15:30:12.892] [INFO] GameLift Server - Server is ready to host game sessions
+[2025-06-03 15:31:03.154] [INFO] GameLift Server - Received game session request: 7f989c05-e8aa-401b-a3ef-394a03777266
+[2025-06-03 15:31:03.256] [INFO] GameLift Server - Game session created with 2 player slots
+[2025-06-03 15:31:03.357] [INFO] GameLift Server - Game configuration: Map=Arena01, Mode=Deathmatch, MaxPlayers=2
+[2025-06-03 15:31:03.458] [INFO] GameLift Server - Game session 7f989c05-e8aa-401b-a3ef-394a03777266 activated successfully
+[2025-06-03 15:31:04.561] [INFO] GameLift Server - Matchmaking data received with teams: team-1, team-2
+[2025-06-03 15:31:15.662] [INFO] GameLift Server - Player connection: user5 (team-1) connected from 203.0.113.42
+[2025-06-03 15:31:16.123] [INFO] GameLift Server - Player session validated for user5
+[2025-06-03 15:31:16.225] [INFO] GameLift Server - Player user5 spawned at location (125.5, 0, 348.2)
+[2025-06-03 15:31:18.764] [INFO] GameLift Server - Player connection: user6 (team-2) connected from 203.0.113.88
+[2025-06-03 15:31:18.866] [INFO] GameLift Server - Player session validated for user6
+[2025-06-03 15:31:18.967] [INFO] GameLift Server - Player user6 spawned at location (325.5, 0, 148.2)
+[2025-06-03 15:31:19.068] [INFO] GameLift Server - All players connected, starting game countdown
+[2025-06-03 15:31:24.169] [INFO] GameLift Server - Game started
+[2025-06-03 15:31:35.270] [INFO] GameLift Server - Player user5 fired weapon at position (145.3, 1.8, 352.1)
+[2025-06-03 15:31:35.371] [INFO] GameLift Server - Player user6 took damage (25 HP)
+[2025-06-03 15:31:38.472] [INFO] GameLift Server - Player user6 fired weapon at position (310.7, 1.8, 182.6)
+[2025-06-03 15:31:38.573] [INFO] GameLift Server - Player user5 took damage (30 HP)
+[2025-06-03 15:31:45.674] [INFO] GameLift Server - Player user5 picked up health pack
+[2025-06-03 15:31:52.775] [INFO] GameLift Server - Player user6 fired weapon at position (278.1, 1.8, 212.4)
+[2025-06-03 15:31:52.876] [INFO] GameLift Server - Player user5 took damage (35 HP)
+[2025-06-03 15:31:58.977] [INFO] GameLift Server - Player user5 fired weapon at position (168.2, 2.5, 327.8)
+[2025-06-03 15:31:59.078] [INFO] GameLift Server - Critical hit on user6 (50 HP)
+[2025-06-03 15:32:03.179] [INFO] GameLift Server - Player user6 eliminated
+[2025-06-03 15:32:03.280] [INFO] GameLift Server - Round ended, winner: user5 (team-1)
+[2025-06-03 15:32:03.381] [INFO] GameLift Server - Game stats - user5: Kills=1, Deaths=0, Damage=85
+[2025-06-03 15:32:03.482] [INFO] GameLift Server - Game stats - user6: Kills=0, Deaths=1, Damage=65
+[2025-06-03 15:32:13.583] [INFO] GameLift Server - Player user6 disconnected
+[2025-06-03 15:32:15.684] [INFO] GameLift Server - Player user5 disconnected
+[2025-06-03 15:32:15.785] [INFO] GameLift Server - Game session 7f989c05-e8aa-401b-a3ef-394a03777266 ended
+[2025-06-03 15:32:15.886] [INFO] GameLift Server - Cleaning up game resources
+[2025-06-03 15:32:16.987] [INFO] GameLift Server - Server ready for next game session 

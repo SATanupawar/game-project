@@ -169,6 +169,9 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
 
         // Save the creature
         await creature.save();
+        
+        // Update battle_selected_creatures in all users who have this creature
+        await updateBattleSelectedCreatures(creature);
 
         // Get updated stats
         const newStats = creature.getCurrentStats();
@@ -192,6 +195,32 @@ const updateCreatureLevel = async (creatureId, levelNumber) => {
         };
     } catch (error) {
         throw new Error(`Error updating creature level: ${error.message}`);
+    }
+};
+
+/**
+ * Update battle_selected_creatures for all users who have the specified creature
+ * @param {Object} creature - The updated creature document
+ */
+const updateBattleSelectedCreatures = async (creature) => {
+    try {
+        // Import userService
+        const userService = require('./userService');
+        
+        // Find all users who have this creature in their creatures array
+        const users = await User.find({
+            'creatures.creature_id': creature._id
+        });
+        
+        console.log(`Found ${users.length} users with creature ${creature._id} in their creatures array`);
+        
+        // Update each user's battle_selected_creatures
+        for (const user of users) {
+            await userService.syncBattleSelectedCreatures(user, creature._id.toString());
+        }
+    } catch (error) {
+        console.error('Error updating battle_selected_creatures:', error);
+        // Don't throw - this is a background operation that shouldn't fail the main update
     }
 };
 
