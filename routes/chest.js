@@ -330,7 +330,7 @@ router.post('/random-chest', async (req, res) => {
             _id: objectId,
             object_id: objectId.toString(),
             chest_id: selectedChest._id,
-            name: selectedChest.chest_id || selectedChest.name,
+            name: selectedChest.name,
             type: selectedChest.type,
             rarity: selectedChest.rarity,
             unlock_time: null,  // Set to null initially
@@ -348,7 +348,7 @@ router.post('/random-chest', async (req, res) => {
         return res.json({
             chest_id: selectedChest._id,
             object_id: objectId.toString(),
-            name: selectedChest.chest_id || selectedChest.name,
+            name: selectedChest.name,
             type: selectedChest.type,
             rarity: selectedChest.rarity,
             unlock_time: null,
@@ -414,7 +414,7 @@ router.get('/random-chest/:userId', async (req, res) => {
                 max: MAX_CHESTS,
                 would_have_received: selectedChest ? {
                     chest_id: selectedChest._id,
-                    name: selectedChest.chest_id || selectedChest.name,
+                    name: selectedChest.name,
                     type: selectedChest.type,
                     rarity: selectedChest.rarity
                 } : null
@@ -480,7 +480,7 @@ router.get('/random-chest/:userId', async (req, res) => {
             _id: objectId,  // Set the _id explicitly
             object_id: objectId.toString(),  // Also store as string for clearer retrieval
             chest_id: selectedChest._id,
-            name: selectedChest.chest_id || selectedChest.name,
+            name: selectedChest.name,
             type: selectedChest.type,
             rarity: selectedChest.rarity,
             unlock_time: null,  // Set to null initially - timer will start when process-chest is called
@@ -503,7 +503,7 @@ router.get('/random-chest/:userId', async (req, res) => {
         return res.json({
             chest_id: selectedChest._id,
             object_id: objectId.toString(),
-            name: selectedChest.chest_id || selectedChest.name,
+            name: selectedChest.name,
             type: selectedChest.type,
             rarity: selectedChest.rarity,
             unlock_time: null,  // No unlock time yet
@@ -686,11 +686,10 @@ router.get('/debug-rewards/:chestId', async (req, res) => {
                         card_number: card.card_number || index + 1,
                         resource_type: selectedReward.resource_type || "gold",
                         amount: selectedReward.amount || 100,
-                        reward_type: selectedReward.reward_type || "resource",
-                        roll: randomNumber.toFixed(2)
+                        reward_type: selectedReward.reward_type || "resource"
                     };
                     
-                    debugInfo.processing_steps.push(`Final reward for card ${index+1}: ${JSON.stringify(cardReward)}`);
+                    console.log(`Final reward for card ${index+1}:`, JSON.stringify(cardReward, null, 2));
                     
                     // Add the reward amount to the total resources
                     if (cardReward.resource_type === 'gold') {
@@ -871,10 +870,17 @@ router.post('/process-chest/:userId', async (req, res) => {
             
             // Set the unlock time to now + unlock duration
             userChest.unlock_time = new Date(Date.now() + unlockTimeMinutes * 60000);
+            
+            // Set the start_time to now if not already set
+            if (!userChest.start_time) {
+                userChest.start_time = new Date();
+            }
+            
             await user.save();
             
             return res.json({
                 status: 'unlocking_started',
+                start_time: userChest.start_time,
                 unlock_time: userChest.unlock_time,
                 remaining_time_seconds: unlockTimeMinutes * 60
             });
@@ -888,6 +894,7 @@ router.post('/process-chest/:userId', async (req, res) => {
             // Chest is still unlocking
             return res.json({
                 status: 'unlocking',
+                start_time: userChest.start_time,
                 unlock_time: userChest.unlock_time,
                 remaining_time_seconds: Math.ceil(remainingTimeMs / 1000)
             });
@@ -1024,8 +1031,7 @@ router.post('/process-chest/:userId', async (req, res) => {
                         card_number: card.card_number || index + 1,
                         resource_type: selectedReward.resource_type || "gold",
                         amount: selectedReward.amount || 100,
-                        reward_type: selectedReward.reward_type || "resource",
-                        roll: randomNumber.toFixed(2)
+                        reward_type: selectedReward.reward_type || "resource"
                     };
                     
                     console.log(`Final reward for card ${index+1}:`, JSON.stringify(cardReward, null, 2));
@@ -1148,11 +1154,7 @@ router.post('/process-chest/:userId', async (req, res) => {
                 rarity: userChest.rarity || chestDetails.rarity
             },
             cards: cardRewards,
-            resources: resources,
-            chest_data: {
-                id: chestDetails._id,
-                has_rewards: !!chestDetails.rewards
-            }
+            resources: resources
         });
         
     } catch (err) {
@@ -1228,7 +1230,7 @@ router.get('/preview-chest/:userId', async (req, res) => {
             preview: true,
             chest_id: selectedChest._id,
             object_id: tempObjectId.toString(),
-            name: selectedChest.chest_id || selectedChest.name,
+            name: selectedChest.name,
             type: selectedChest.type,
             rarity: selectedChest.rarity,
             unlock_time: null,  // No unlock time until user initiates unlocking
@@ -1315,10 +1317,17 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
             
             // Set the unlock time to now + unlock duration
             userChest.unlock_time = new Date(Date.now() + unlockTimeMinutes * 60000);
+            
+            // Set the start_time to now if not already set
+            if (!userChest.start_time) {
+                userChest.start_time = new Date();
+            }
+            
             await user.save();
             
             return res.json({
                 status: 'unlocking_started',
+                start_time: userChest.start_time,
                 unlock_time: userChest.unlock_time,
                 remaining_time_seconds: unlockTimeMinutes * 60
             });
@@ -1332,6 +1341,7 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
             // Chest is still unlocking
             return res.json({
                 status: 'unlocking',
+                start_time: userChest.start_time,
                 unlock_time: userChest.unlock_time,
                 remaining_time_seconds: Math.ceil(remainingTimeMs / 1000)
             });
@@ -1468,8 +1478,7 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
                         card_number: card.card_number || index + 1,
                         resource_type: selectedReward.resource_type || "gold",
                         amount: selectedReward.amount || 100,
-                        reward_type: selectedReward.reward_type || "resource",
-                        roll: randomNumber.toFixed(2)
+                        reward_type: selectedReward.reward_type || "resource"
                     };
                     
                     console.log(`Final reward for card ${index+1}:`, JSON.stringify(cardReward, null, 2));
@@ -1592,11 +1601,7 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
                 rarity: userChest.rarity || chestDetails.rarity
             },
             cards: cardRewards,
-            resources: resources,
-            chest_data: {
-                id: chestDetails._id,
-                has_rewards: !!chestDetails.rewards
-            }
+            resources: resources
         });
         
     } catch (err) {

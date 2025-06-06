@@ -41,6 +41,7 @@ const authRoutes = require('./routes/authRoute');
 const logRoutes = require('./routes/logRoute');
 const matchmakingRoutes = require('./routes/matchmakingRoute');
 const questRoutes = require('./routes/questRoute');
+const pathRoutes = require('./routes/paths');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
@@ -104,6 +105,7 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api', battlePassRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', battlePassProgressRoutes);
+app.use('/api/paths', pathRoutes);
 
 // Direct endpoint to get a user's data with battle creatures
 app.get('/api/user/:userId/battle-data', async (req, res) => {
@@ -264,7 +266,7 @@ app.get('/api/user/:userId/creature-inventory', async (req, res) => {
     
     if (!userId) {
       return res.status(400).json({
-        success: false,
+        success: false, 
         message: 'Missing required field: userId'
       });
     }

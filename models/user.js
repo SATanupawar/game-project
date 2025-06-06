@@ -68,6 +68,22 @@ const userTrophySchema = new mongoose.Schema({
     }
 }, { _id: false }); // Disable _id for embedded documents
 
+// Define schema for placed paths
+const placedPathSchema = new mongoose.Schema({
+    x: {
+        type: Number,
+        required: true
+    },
+    y: {
+        type: Number,
+        required: true
+    },
+    created_at: {
+        type: Date,
+        default: Date.now
+    }
+}, { _id: false }); // Disable _id for embedded documents
+
 // Define schema for user chests
 const userChestSchema = new mongoose.Schema({
     chest_id: {
@@ -80,6 +96,10 @@ const userChestSchema = new mongoose.Schema({
     },
     name: String,
     rarity: String,
+    start_time: {
+        type: Date,
+        default: Date.now
+    },
     unlock_time: {
         type: Date,
         default: Date.now
@@ -811,6 +831,7 @@ const userSchema = new mongoose.Schema({
         type: battlePassSummarySchema,
         default: () => ({})
     },
+    placed_paths: [placedPathSchema],
 }, {
     timestamps: true,
     // Allow fields not specified in the schema
