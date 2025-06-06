@@ -1457,25 +1457,25 @@ async function updateBattleCreatureIfSelected(user, creatureId, newLevel, newAtt
         const battleCreature = user.battle_selected_creatures[battleCreatureIndex];
         
         // Store the original creature_type before making any changes
-        // This is critical especially for "Fractal" type creatures
         const originalCreatureType = battleCreature.creature_type;
         
         console.log(`Updating battle creature stats. Original creature_type: ${originalCreatureType}`);
         
+        // Create a new object with only the fields we want to update
+        const updatedFields = {
+            level: newLevel,
+            attack: newAttack,
+            health: newHealth
+        };
+        
         // Update only level, attack, and health - never change creature_type
-        battleCreature.level = newLevel;
-        battleCreature.attack = newAttack;
-        battleCreature.health = newHealth;
+        Object.assign(battleCreature, updatedFields);
         
         // Force preserve original creature_type no matter what
-        if (originalCreatureType && originalCreatureType !== battleCreature.creature_type) {
-            console.log(`Restoring original creature_type: ${originalCreatureType} (was changed to ${battleCreature.creature_type})`);
-            battleCreature.creature_type = originalCreatureType;
-        }
+        battleCreature.creature_type = originalCreatureType;
         
         // Double-check for Fractal type specifically
-        if (originalCreatureType === "Fractal" && battleCreature.creature_type !== "Fractal") {
-            console.log(`Forcing Fractal type restoration`);
+        if (originalCreatureType === "Fractal") {
             battleCreature.creature_type = "Fractal";
         }
         
@@ -1612,6 +1612,10 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         console.log(`Looking for creature template with creature_Id: ${creatureEntry.creature_type}`);
         let creatureTemplate = null;
         
+        // CRITICAL: Store the original creature_type so we never lose it during template lookup
+        const originalCreatureTypeForLookup = creatureEntry.creature_type;
+        console.log(`Storing original creature_type: "${originalCreatureTypeForLookup}"`);
+        
         if (creatureEntry.creature_type) {
             creatureTemplate = await Creature.findOne({ creature_Id: creatureEntry.creature_type });
         }
@@ -1621,8 +1625,9 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             creatureTemplate = await Creature.findOne({ name: creatureEntry.name });
             if (creatureTemplate) {
                 console.log(`Found template by name: ${creatureTemplate.name}`);
-                // Update the creature_type in the entry
-                creatureEntry.creature_type = creatureTemplate.creature_Id;
+                // CRITICAL: Don't update creature_type with template ID here
+                // This was causing the bug where creature_type was changing
+                // creatureEntry.creature_type = creatureTemplate.creature_Id;
             }
         }
         
@@ -1644,21 +1649,32 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                 
                 if (nameMatch) {
                     creatureTemplate = nameMatch;
-                    creatureEntry.creature_type = nameMatch.creature_Id;
+                    // CRITICAL: Don't update creature_type with template ID here
+                    // This was causing the bug where creature_type was changing
+                    // creatureEntry.creature_type = nameMatch.creature_Id;
                     console.log(`Matched creature by name similarity to: ${nameMatch.name}`);
                 } else {
                     // Just pick the first template as a fallback
                     creatureTemplate = allTemplates[0];
-                    creatureEntry.creature_type = allTemplates[0].creature_Id;
+                    // CRITICAL: Don't update creature_type with template ID here
+                    // This was causing the bug where creature_type was changing
+                    // creatureEntry.creature_type = allTemplates[0].creature_Id;
                     console.log(`Using default template: ${allTemplates[0].name}`);
                 }
             } else {
                 // Just pick the first template as a fallback
                 creatureTemplate = allTemplates[0];
-                creatureEntry.creature_type = allTemplates[0].creature_Id;
+                // CRITICAL: Don't update creature_type with template ID here
+                // This was causing the bug where creature_type was changing
+                // creatureEntry.creature_type = allTemplates[0].creature_Id;
                 console.log(`Using default template: ${allTemplates[0].name}`);
             }
         }
+        
+        // CRITICAL: Restore the original creature_type
+        // This ensures we never lose the original value regardless of template lookup
+        creatureEntry.creature_type = originalCreatureTypeForLookup;
+        console.log(`Restored original creature_type: "${originalCreatureTypeForLookup}"`);
         
         if (!creatureTemplate) {
             throw new Error('Could not find or assign a creature template for calculating stats');
@@ -1806,7 +1822,11 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         // Save the user first to make sure the currency changes are applied
         await user.save();
         
+        // Store original creature_type to ensure it's preserved
+        const originalCreatureType = creatureEntry.creature_type;
+        
         // Perform a direct MongoDB update on the creature in the creatures array
+        // IMPORTANT: We only update specific fields, never creature_type
         const updateResult = await User.updateOne(
             { 
                 userId: userIdParam, 
@@ -1819,6 +1839,7 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                     "creatures.$.health": health,
                     "creatures.$.gold_coins": goldCoins,
                     "creatures.$.arcane_energy": arcaneEnergy
+                    // NEVER set creature_type here
                 } 
             }
         );
@@ -1828,6 +1849,23 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
         // Check if the update was successful
         if (updateResult.nModified === 0) {
             console.warn(`Warning: MongoDB update did not modify any documents. This could mean the data didn't change or the query didn't match.`);
+        }
+        
+        // Make a second update if needed to force the original creature_type
+        // This is a safeguard in case the creature_type was changed somewhere else
+        if (originalCreatureType) {
+            await User.updateOne(
+                { 
+                    userId: userIdParam, 
+                    "creatures._id": new mongoose.Types.ObjectId(creatureEntry._id) 
+                },
+                { 
+                    $set: { 
+                        "creatures.$.creature_type": originalCreatureType
+                    } 
+                }
+            );
+            console.log(`Force-preserved original creature_type: "${originalCreatureType}"`);
         }
         
         // --- NEW LOGIC: Reload user and update battle_selected_creatures ---
@@ -1841,11 +1879,22 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
                     (battleCreature.creature_id.toString() === creatureEntry.creature_id.toString() ||
                      battleCreature.creature_id.toString() === creatureIdParam.toString())
                 ) {
+                    // Store original creature_type
+                    const originalCreatureType = battleCreature.creature_type;
+                    
+                    // Create update object with only the fields we want to update
+                    const updatedFields = {
+                        level: parsedLevel,
+                        attack: attack,
+                        health: health
+                    };
+                    
                     // Update only level, attack, health
-                    freshUser.battle_selected_creatures[i].level = parsedLevel;
-                    freshUser.battle_selected_creatures[i].attack = attack;
-                    freshUser.battle_selected_creatures[i].health = health;
-                    // Do NOT update creature_type
+                    Object.assign(battleCreature, updatedFields);
+                    
+                    // Force preserve original creature_type
+                    battleCreature.creature_type = originalCreatureType;
+                    
                     freshUser.markModified('battle_selected_creatures');
                     await freshUser.save();
                     break;
