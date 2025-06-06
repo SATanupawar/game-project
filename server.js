@@ -42,6 +42,7 @@ const logRoutes = require('./routes/logRoute');
 const matchmakingRoutes = require('./routes/matchmakingRoute');
 const questRoutes = require('./routes/questRoute');
 const pathRoutes = require('./routes/paths');
+const spinWheelRoutes = require('./routes/spinWheel');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
@@ -106,6 +107,7 @@ app.use('/api', battlePassRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', battlePassProgressRoutes);
 app.use('/api/paths', pathRoutes);
+app.use('/api/spin-wheel', spinWheelRoutes);
 
 // Direct endpoint to get a user's data with battle creatures
 app.get('/api/user/:userId/battle-data', async (req, res) => {

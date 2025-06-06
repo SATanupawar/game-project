@@ -111,10 +111,20 @@ async function openCardPack(userId, packId) {
                     }
                     
                     // Check if the creature already exists in the inventory
-                    const creatureInInventory = user.creature_inventory.find(c => 
-                        (creatureTemplate && c.creature_id.toString() === creatureTemplate._id.toString()) ||
-                        c.name.toLowerCase() === selectedReward.creature_name.toLowerCase()
-                    );
+                    const creatureInInventory = user.creature_inventory.find(c => {
+                        // First check for undefined creature_id
+                        if (!c.creature_id) {
+                            return c.name && c.name.toLowerCase() === selectedReward.creature_name.toLowerCase();
+                        }
+                        
+                        // Safe toString comparison with nullish checks
+                        if (creatureTemplate && creatureTemplate._id) {
+                            return c.creature_id.toString() === creatureTemplate._id.toString();
+                        }
+                        
+                        // Fallback to name comparison
+                        return c.name && c.name.toLowerCase() === selectedReward.creature_name.toLowerCase();
+                    });
                     
                     if (creatureInInventory) {
                         // Increment the count for existing creature

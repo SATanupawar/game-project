@@ -702,6 +702,32 @@ router.get('/debug-rewards/:chestId', async (req, res) => {
                         resources.arcane_energy += cardReward.amount;
                     }
                     
+                    // Handle creature rewards
+                    if (selectedReward.reward_type === 'creature' && selectedReward.creature_name) {
+                        // Set the resource_type to match the reward_type for consistency
+                        cardReward.resource_type = 'creature';
+                        // Set amount to 1 for creatures
+                        cardReward.amount = 0;
+                        // Add creature name to the reward
+                        cardReward.creature_name = selectedReward.creature_name;
+                        cardReward.rarity = selectedReward.rarity || 'common';
+                        
+                        // Add to user's creature inventory
+                        if (!user.creature_inventory) {
+                            user.creature_inventory = [];
+                        }
+                        
+                        user.creature_inventory.push({
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
+                            count: 1,
+                            rarity: selectedReward.rarity || 'common',
+                            image: selectedReward.image || null
+                        });
+                        
+                        console.log(`Added creature ${selectedReward.creature_name} to inventory`);
+                    }
+                    
                     // Add the reward to the list
                     cardRewards.push(cardReward);
                 }
@@ -1045,6 +1071,32 @@ router.post('/process-chest/:userId', async (req, res) => {
                         resources.anima += cardReward.amount;
                     } else if (cardReward.resource_type === 'arcane_energy') {
                         resources.arcane_energy += cardReward.amount;
+                    }
+                    
+                    // Handle creature rewards
+                    if (selectedReward.reward_type === 'creature' && selectedReward.creature_name) {
+                        // Set the resource_type to match the reward_type for consistency
+                        cardReward.resource_type = 'creature';
+                        // Set amount to 1 for creatures
+                        cardReward.amount = 0;
+                        // Add creature name to the reward
+                        cardReward.creature_name = selectedReward.creature_name;
+                        cardReward.rarity = selectedReward.rarity || 'common';
+                        
+                        // Add to user's creature inventory
+                        if (!user.creature_inventory) {
+                            user.creature_inventory = [];
+                        }
+                        
+                        user.creature_inventory.push({
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
+                            count: 1,
+                            rarity: selectedReward.rarity || 'common',
+                            image: selectedReward.image || null
+                        });
+                        
+                        console.log(`Added creature ${selectedReward.creature_name} to inventory`);
                     }
                     
                     // Add the reward to the list
@@ -1492,6 +1544,32 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
                         resources.anima += cardReward.amount;
                     } else if (cardReward.resource_type === 'arcane_energy') {
                         resources.arcane_energy += cardReward.amount;
+                    }
+                    
+                    // Handle creature rewards
+                    if (selectedReward.reward_type === 'creature' && selectedReward.creature_name) {
+                        // Set the resource_type to match the reward_type for consistency
+                        cardReward.resource_type = 'creature';
+                        // Set amount to 1 for creatures
+                        cardReward.amount = 0;
+                        // Add creature name to the reward
+                        cardReward.creature_name = selectedReward.creature_name;
+                        cardReward.rarity = selectedReward.rarity || 'common';
+                        
+                        // Add to user's creature inventory
+                        if (!user.creature_inventory) {
+                            user.creature_inventory = [];
+                        }
+                        
+                        user.creature_inventory.push({
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
+                            count: 1,
+                            rarity: selectedReward.rarity || 'common',
+                            image: selectedReward.image || null
+                        });
+                        
+                        console.log(`Added creature ${selectedReward.creature_name} to inventory`);
                     }
                     
                     // Add the reward to the list
