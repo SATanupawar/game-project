@@ -1436,6 +1436,60 @@ async function addCreatureToBuilding(userIdParam, buildingIndex, creatureData) {
     }
 }
 
+// Helper function to update battle_selected_creatures when creature level changes
+async function updateBattleCreatureIfSelected(user, creatureId, newLevel, newAttack, newHealth) {
+    try {
+        // Skip if no battle-selected creatures
+        if (!user.battle_selected_creatures || user.battle_selected_creatures.length === 0) {
+            return false;
+        }
+        
+        // Find the creature in battle_selected_creatures by ID
+        const battleCreatureIndex = user.battle_selected_creatures.findIndex(bc => 
+            bc.creature_id && bc.creature_id.toString() === creatureId.toString()
+        );
+        
+        if (battleCreatureIndex === -1) {
+            // Creature not found in battle selection
+            return false;
+        }
+        
+        const battleCreature = user.battle_selected_creatures[battleCreatureIndex];
+        
+        // Store the original creature_type before making any changes
+        // This is critical especially for "Fractal" type creatures
+        const originalCreatureType = battleCreature.creature_type;
+        
+        console.log(`Updating battle creature stats. Original creature_type: ${originalCreatureType}`);
+        
+        // Update only level, attack, and health - never change creature_type
+        battleCreature.level = newLevel;
+        battleCreature.attack = newAttack;
+        battleCreature.health = newHealth;
+        
+        // Force preserve original creature_type no matter what
+        if (originalCreatureType && originalCreatureType !== battleCreature.creature_type) {
+            console.log(`Restoring original creature_type: ${originalCreatureType} (was changed to ${battleCreature.creature_type})`);
+            battleCreature.creature_type = originalCreatureType;
+        }
+        
+        // Double-check for Fractal type specifically
+        if (originalCreatureType === "Fractal" && battleCreature.creature_type !== "Fractal") {
+            console.log(`Forcing Fractal type restoration`);
+            battleCreature.creature_type = "Fractal";
+        }
+        
+        // Mark as modified
+        user.markModified('battle_selected_creatures');
+        
+        console.log(`Updated battle creature ${battleCreature.name} (ID: ${creatureId}) to level ${newLevel} with ${newAttack} attack and ${newHealth} health. Preserved creature_type: ${battleCreature.creature_type}`);
+        return true;
+    } catch (error) {
+        console.error('Error updating battle creature:', error);
+        return false;
+    }
+}
+
 // Update specific creature level for a user's building - with embedded creature data
 async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatureIdParam, newLevelNumber) {
     try {
@@ -1776,8 +1830,29 @@ async function updateBuildingCreatureLevel(userIdParam, buildingIdParam, creatur
             console.warn(`Warning: MongoDB update did not modify any documents. This could mean the data didn't change or the query didn't match.`);
         }
         
-        console.log(`Updated creature ${creatureEntry.name || creatureEntry.creature_type} from level ${previousLevel} to ${parsedLevel}`);
-        console.log(`New stats: Attack ${attack}, Health ${health}, Gold ${goldCoins}, Arcane Energy ${arcaneEnergy}`);
+        // --- NEW LOGIC: Reload user and update battle_selected_creatures ---
+        const freshUser = await User.findOne({ userId: userIdParam });
+        if (freshUser && freshUser.battle_selected_creatures && Array.isArray(freshUser.battle_selected_creatures)) {
+            for (let i = 0; i < freshUser.battle_selected_creatures.length; i++) {
+                const battleCreature = freshUser.battle_selected_creatures[i];
+                // Always match by creature_id, not _id
+                if (
+                    battleCreature.creature_id &&
+                    (battleCreature.creature_id.toString() === creatureEntry.creature_id.toString() ||
+                     battleCreature.creature_id.toString() === creatureIdParam.toString())
+                ) {
+                    // Update only level, attack, health
+                    freshUser.battle_selected_creatures[i].level = parsedLevel;
+                    freshUser.battle_selected_creatures[i].attack = attack;
+                    freshUser.battle_selected_creatures[i].health = health;
+                    // Do NOT update creature_type
+                    freshUser.markModified('battle_selected_creatures');
+                    await freshUser.save();
+                    break;
+                }
+            }
+        }
+        // --- END NEW LOGIC ---
 
         return {
             success: true,
