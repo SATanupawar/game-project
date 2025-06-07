@@ -204,4 +204,29 @@ router.get('/:userId', async (req, res) => {
     }
 });
 
+/**
+ * @route   DELETE /api/paths/:userId
+ * @desc    Delete all placed_paths for a user
+ * @access  Private
+ */
+router.delete('/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findOne({ userId });
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        user.placed_paths = [];
+        await user.save();
+        return res.status(200).json({
+            success: true,
+            message: 'All placed paths deleted successfully',
+            placed_paths: []
+        });
+    } catch (err) {
+        console.error('Error deleting all placed paths:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 module.exports = router; 
