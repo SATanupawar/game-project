@@ -1,14 +1,6 @@
 const User = require('../models/user');
 const mongoose = require('mongoose');
 
-// Currency maximums
-const MAX_VALUES = {
-    gems: 1000000000,      // 1B
-    arcane_energy: 100000000, // 100M
-    gold: 100000000,       // 100M
-    anima: 1000000         // 1M
-};
-
 // Get user currency details
 async function getUserCurrency(userId) {
     try {
@@ -135,8 +127,7 @@ async function processCurrencyOperations(userId, operations) {
                         message: `Insufficient ${currencyType}. You only have ${currentValue} but tried to remove ${removalAmount}.`,
                         previous_value: currentValue,
                         current_value: currentValue,
-                        change: 0,
-                        max_value: MAX_VALUES[currencyType]
+                        change: 0
                     });
                     continue;
                 }
@@ -145,14 +136,11 @@ async function processCurrencyOperations(userId, operations) {
             // Calculate new value
             let newValue = currentValue + amount;
             
-            // Apply limits
+            // Only check for negative values
             let limitMessage = null;
             if (newValue < 0) {
                 limitMessage = `Insufficient ${currencyType}. Setting to 0.`;
                 newValue = 0;
-            } else if (newValue > MAX_VALUES[currencyType]) {
-                limitMessage = `Maximum ${currencyType} capacity reached (${MAX_VALUES[currencyType].toLocaleString()}).`;
-                newValue = MAX_VALUES[currencyType];
             }
             
             // Update currency
@@ -169,7 +157,6 @@ async function processCurrencyOperations(userId, operations) {
                 previous_value: currentValue,
                 current_value: newValue,
                 change: amount,
-                max_value: MAX_VALUES[currencyType],
                 message: limitMessage || `${currencyType} updated successfully`
             });
         }
@@ -454,6 +441,5 @@ module.exports = {
     getUserCurrency,
     processCurrencyOperations,
     syncGoldValues,
-    MAX_VALUES,
     purchaseWithGems
 }; 
