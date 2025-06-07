@@ -37,20 +37,17 @@ const userCurrencySchema = new mongoose.Schema({
     gems: {
         type: Number,
         default: 0,
-        min: 0,
-        max: 1000000000 // 1B max
+        min: 0
     },
     arcane_energy: {
         type: Number,
         default: 0,
-        min: 0,
-        max: 100000000 // 100M max
+        min: 0
     },
     anima: {
         type: Number,
         default: 0,
-        min: 0,
-        max: 1000000 // 1M max
+        min: 0
     },
     last_updated: {
         type: Date,
