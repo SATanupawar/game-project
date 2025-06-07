@@ -178,12 +178,17 @@ router.post('/spin/:userId', async (req, res) => {
         // Save user with updated rewards
         await user.save();
         
+        // Get all rewards to determine index
+        const allRewards = await SpinWheelReward.find({ active: true }).sort({ min_value: 1 });
+        const rewardIndex = allRewards.findIndex(r => r._id.toString() === reward._id.toString());
+        
         // Generate a pure random number between 1-100 for display
         const displayNumber = Math.floor(Math.random() * 100) + 1;
         
         return res.status(200).json({
             success: true,
             message: 'Spin successful',
+            reward_index: rewardIndex,
             reward: rewardDetails,
             user_updates: updatedFields
         });

@@ -90,7 +90,8 @@ async function openCardPack(userId, packId) {
                         type: 'resource',
                         resource_type: selectedReward.resource_type,
                         amount: selectedReward.amount,
-                        card_number: card.card_number
+                        card_number: card.card_number,
+                        card_index: cardPack.cards.indexOf(card)
                     });
                 } else if (selectedReward.reward_type === 'creature') {
                     // Fetch complete creature data from the database
@@ -170,6 +171,7 @@ async function openCardPack(userId, packId) {
                         creature_type: creatureTemplate ? creatureTemplate.creature_Id : selectedReward.creature_type,
                         rarity: creatureTemplate ? creatureTemplate.type : selectedReward.rarity,
                         card_number: card.card_number,
+                        card_index: cardPack.cards.indexOf(card),
                         added_to_inventory: true,
                         // Add important stats to the response
                         base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
