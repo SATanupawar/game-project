@@ -144,6 +144,24 @@ router.get('/users/:userId/card-packs', async (req, res) => {
     }
 });
 
+// GET /api/card-packs/all - fetch all card packs from the database (no user context)
+router.get('/all', async (req, res) => {
+    try {
+        const CardPack = require('../models/cardPack');
+        const packs = await CardPack.find({});
+        res.status(200).json({
+            success: true,
+            card_packs: packs
+        });
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: err.message
+        });
+    }
+});
+
 /**
  * @route GET /api/card-packs/:packId
  * @description Get details of a specific card pack

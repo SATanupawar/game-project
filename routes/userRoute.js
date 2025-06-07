@@ -27,6 +27,7 @@ const {
 const mongoose = require('mongoose');
 const User = require('../models/user');
 const UserLevel = require('../models/userLevel');
+const Boost = require('../models/boost');
 
 // Get all users
 router.get('/', async (req, res) => {
@@ -3949,3 +3950,21 @@ router.post('/:userId/creature/:creatureId/speedup', async (req, res) => {
 
 // At the end of the file, ensure only this line exists:
 module.exports = router;
+
+// Get all boosts in the database
+router.get('/boosts/all', async (req, res) => {
+    try {
+        const boosts = await Boost.find({});
+        res.status(200).json({
+            success: true,
+            boosts
+        });
+    } catch (err) {
+        console.error('Error fetching boosts:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: err.message
+        });
+    }
+});

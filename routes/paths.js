@@ -50,35 +50,20 @@ router.post('/add/:userId', async (req, res) => {
             existingCoords.add(`${path.x},${path.y}`);
         }
 
-        // Check for duplicates first
-        const duplicates = [];
-        for (const path of paths) {
-            const coordKey = `${path.x},${path.y}`;
-            if (existingCoords.has(coordKey)) {
-                duplicates.push(path);
-            }
-        }
-
-        // If duplicates found, return 400 error
-        if (duplicates.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Duplicate paths detected',
-                duplicates: duplicates,
-                existing_paths: user.placed_paths
-            });
-        }
-
         // Add only paths that don't already exist
         const addedPaths = [];
         for (const path of paths) {
-            const newPath = {
-                x: path.x,
-                y: path.y,
-                created_at: new Date()
-            };
-            user.placed_paths.push(newPath);
-            addedPaths.push(newPath);
+            const coordKey = `${path.x},${path.y}`;
+            if (!existingCoords.has(coordKey)) {
+                const newPath = {
+                    x: path.x,
+                    y: path.y,
+                    created_at: new Date()
+                };
+                user.placed_paths.push(newPath);
+                addedPaths.push(newPath);
+                existingCoords.add(coordKey); // Add to set to prevent duplicates within the same request
+            }
         }
 
         await user.save();
