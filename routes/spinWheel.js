@@ -196,4 +196,26 @@ router.post('/spin/:userId', async (req, res) => {
     }
 });
 
+/**
+ * @route   GET /api/spin-wheel/rewards
+ * @desc    Get all spin wheel rewards
+ * @access  Private (or public, as needed)
+ */
+router.get('/rewards', async (req, res) => {
+    try {
+        const rewards = await SpinWheelReward.find({});
+        res.status(200).json({
+            success: true,
+            rewards
+        });
+    } catch (err) {
+        console.error('Error fetching spin wheel rewards:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: err.message
+        });
+    }
+});
+
 module.exports = router; 

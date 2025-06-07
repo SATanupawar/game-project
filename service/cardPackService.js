@@ -135,7 +135,7 @@ async function openCardPack(userId, packId) {
                         const newInventoryItem = {
                             creature_id: creatureTemplate ? creatureTemplate._id : new mongoose.Types.ObjectId(),
                         creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
-                                      (selectedReward.creature_type || selectedReward.creature_name.toLowerCase().replace(/\s+/g, '_')),
+                                      (selectedReward.creature_type || selectedReward.creature_name),
                             name: selectedReward.creature_name,
                             count: 1,
                             rarity: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
@@ -238,7 +238,7 @@ async function openCardPack(userId, packId) {
                     creature_id: migratedCreatureId,
                     name: lockedCreature.name,
                     creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
-                                 (lockedCreature.creature_type || lockedCreature.name.toLowerCase().replace(/\s+/g, '_')),
+                                 (lockedCreature.creature_type || lockedCreature.name),
                     type: creatureTemplate ? creatureTemplate.type : 'common',
                     level: lockedCreature.level || 1,
                     building_index: 0, // Default building index
