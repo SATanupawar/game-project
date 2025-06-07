@@ -287,11 +287,9 @@ router.post('/users/:userId/card-packs/open', async (req, res) => {
             // Continue with response even if quest update fails
         }
 
-        return res.status(200).json({
-            ...result,
-            userId: user._id,
-            username: user.username
-        });
+        // Remove unwanted fields from result
+        const { message, unlock_instructions, userId: _uid, ...cleanedResult } = result;
+        return res.status(200).json(cleanedResult);
     } catch (error) {
         console.error('Error opening card pack for user:', error);
         return res.status(500).json({
