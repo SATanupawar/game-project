@@ -3085,7 +3085,7 @@ async function addBoostToUser(userIdParam, boostIdParam) {
 
         // Check if user already has this boost
         const existingBoostIndex = user.boosts.findIndex(b => 
-            (b.boost_id && b.boost_id.toString() === boost._id.toString())
+            (b.boost_id && b.boost_id === boost.boost_id)
         );
 
         if (existingBoostIndex !== -1) {
@@ -3112,7 +3112,7 @@ async function addBoostToUser(userIdParam, boostIdParam) {
 
         // Add boost to user
         const userBoost = {
-            boost_id: boost._id,
+            boost_id: boost.boost_id,   // <-- "siphon" (string id/slug)
             boost_name: boost.name,
             count: 1
         };
@@ -3163,22 +3163,22 @@ async function removeBoostFromUser(userIdParam, boostIdParam) {
         }
 
         // Find the boost to remove
-        let boostObjectId;
+        let boostSlug;
         if (mongoose.Types.ObjectId.isValid(boostIdParam)) {
-            // If it's a valid ObjectId, use it directly
-            boostObjectId = boostIdParam;
-        } else {
-            // Otherwise, look up the boost to get its ObjectId
-            const boost = await Boost.findOne({ boost_id: boostIdParam });
+            // If it's a valid ObjectId, look up the boost to get its boost_id
+            const boost = await Boost.findById(boostIdParam);
             if (!boost) {
                 throw new Error(`Boost ${boostIdParam} not found`);
             }
-            boostObjectId = boost._id;
+            boostSlug = boost.boost_id;
+        } else {
+            // Otherwise, use the string id directly
+            boostSlug = boostIdParam;
         }
 
         // Find the index of the boost in the user's array
-        const boostIndex = user.boosts.findIndex(b => 
-            b.boost_id && b.boost_id.toString() === boostObjectId.toString()
+        const boostIndex = user.boosts.findIndex(b =>
+            b.boost_id && b.boost_id === boostSlug
         );
 
         if (boostIndex === -1) {
@@ -3196,10 +3196,8 @@ async function removeBoostFromUser(userIdParam, boostIdParam) {
         if (user.boosts[boostIndex].count > 1) {
             user.boosts[boostIndex].count -= 1;
             user.markModified('boosts');
-            
             // Save user
             await user.save();
-            
             return {
                 success: true,
                 message: `Decreased ${boost.boost_name} boost count to ${user.boosts[boostIndex].count}`,
@@ -3215,10 +3213,8 @@ async function removeBoostFromUser(userIdParam, boostIdParam) {
             // Remove the boost if count would reach 0
             user.boosts.splice(boostIndex, 1);
             user.markModified('boosts');
-            
             // Save user
             await user.save();
-            
             return {
                 success: true,
                 message: `Successfully removed ${boost.boost_name} boost from user`,

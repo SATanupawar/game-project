@@ -68,6 +68,9 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
         const configNameMatch = gameLiftConfig.matchmakingConfigurationArn.match(/matchmakingconfiguration\/([^\/]+)$/);
         const configName = configNameMatch ? configNameMatch[1] : gameLiftConfig.matchmakingConfigurationArn;
 
+        console.log('Loaded matchmaking config ARN:', process.env.AWS_GAMELIFT_MATCHMAKING_CONFIG_ARN);
+        console.log('Resolved configName:', configName);
+
         // Create matchmaking ticket request
         const params = {
             ConfigurationName: configName,
@@ -104,7 +107,7 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
             // If AWS GameLift is not fully set up, return a mock response for testing
             console.log('Returning mock ticket response with our generated ticketId:', ticketId);
             
-            // Log the matchmaking ticket creation attempt
+            // Log the matchmaking ticket creation
             await logService.createLog('MATCHMAKING_TICKET_CREATED', userId, {
                 ticketId: ticketId,
                 configurationName: configName,

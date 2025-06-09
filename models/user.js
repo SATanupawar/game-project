@@ -21,8 +21,8 @@ const battleCreatureSchema = new mongoose.Schema({
 // Define schema for user boosts
 const userBoostSchema = new mongoose.Schema({
     boost_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Boost'
+        type: String,
+        required: true
     },
     boost_name: String,
     count: {
