@@ -90,8 +90,7 @@ async function openCardPack(userId, packId) {
                         type: 'resource',
                         resource_type: selectedReward.resource_type,
                         amount: selectedReward.amount,
-                        card_number: card.card_number,
-                        card_index: cardPack.cards.indexOf(card)
+                        card_number: card.card_number
                     });
                 } else if (selectedReward.reward_type === 'creature') {
                     // Fetch complete creature data from the database
@@ -135,12 +134,11 @@ async function openCardPack(userId, packId) {
                         // Add new creature to inventory with all stats
                         const newInventoryItem = {
                             creature_id: creatureTemplate ? creatureTemplate._id : new mongoose.Types.ObjectId(),
-                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : 
-                                      (selectedReward.creature_type || selectedReward.creature_name),
+                            creature_type: selectedReward.creature_Id,
                             name: selectedReward.creature_name,
                             count: 1,
                             rarity: creatureTemplate ? creatureTemplate.type : (selectedReward.rarity || 'common'),
-                        image: creatureTemplate ? creatureTemplate.image : null,
+                            image: `creatures/${selectedReward.creature_Id}.png`,
                             // Add important stats
                             base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,
                             base_health: creatureTemplate ? creatureTemplate.base_health : 300,
@@ -167,11 +165,9 @@ async function openCardPack(userId, packId) {
                     rewards.push({
                         type: 'creature',
                         creature_name: selectedReward.creature_name,
-                        creature_id: creatureTemplate ? creatureTemplate._id.toString() : null,
-                        creature_type: creatureTemplate ? creatureTemplate.creature_Id : selectedReward.creature_type,
+                        creature_id: selectedReward.creature_Id,
                         rarity: creatureTemplate ? creatureTemplate.type : selectedReward.rarity,
                         card_number: card.card_number,
-                        card_index: cardPack.cards.indexOf(card),
                         added_to_inventory: true,
                         // Add important stats to the response
                         base_attack: creatureTemplate ? creatureTemplate.base_attack : 50,

@@ -25,6 +25,7 @@ const RewardSchema = new mongoose.Schema({
         type: String, 
         enum: ['common', 'rare', 'epic', 'legendary'] 
     },
+    creature_Id: { type: String },
     
     // Common fields
     chance: { type: Number, required: true },
@@ -73,7 +74,7 @@ const CardPackSchema = new mongoose.Schema({
         type: Date, 
         default: Date.now 
     }
-});
+}, { strict: false });
 
 // Pre-save hook to update the updated_at field
 CardPackSchema.pre('save', function(next) {
