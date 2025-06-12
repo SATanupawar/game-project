@@ -27,119 +27,119 @@ const decorationsData = [
     name: "Serene Arch",
     cost: 14840,
     boostPercent: 3,
-    sizeString: "6x6",
+    sizeString: "3x3",
     unlockLevel: 12
   },
   {
     name: "Gargoyle Statue",
     cost: 39660,
     boostPercent: 3,
-    sizeString: "6x6",
+    sizeString: "2x2",
     unlockLevel: 15
   },
   {
     name: "Spirit Tree",
     cost: 53640,
     boostPercent: 5,
-    sizeString: "6x6",
+    sizeString: "2x2",
     unlockLevel: 19
   },
   {
     name: "Red Dragon Arch",
     cost: 66120,
     boostPercent: 4,
-    sizeString: "6x6",
+    sizeString: "3x3",
     unlockLevel: 22
   },
   {
     name: "Dragon Gate",
     cost: 77530,
     boostPercent: 6,
-    sizeString: "8x8",
+    sizeString: "3x3",
     unlockLevel: 26
   },
   {
     name: "Gothic Arch",
     cost: 94387,
     boostPercent: 5,
-    sizeString: "8x8",
+    sizeString: "3x3",
     unlockLevel: 30
   },
   {
     name: "Void Tree",
     cost: 173716,
     boostPercent: 5,
-    sizeString: "8x8",
+    sizeString: "3x3",
     unlockLevel: 34
   },
   {
     name: "Obelisk",
     cost: 201940,
     boostPercent: 4,
-    sizeString: "4x4",
+    sizeString: "2x2",
     unlockLevel: 38
   },
   {
     name: "Monolith",
     cost: 361394,
     boostPercent: 5,
-    sizeString: "6x6",
+    sizeString: "2x2",
     unlockLevel: 41
   },
   {
     name: "Engraved Arch",
     cost: 536810,
     boostPercent: 5,
-    sizeString: "8x8",
+    sizeString: "2x2",
     unlockLevel: 44
   },
   {
     name: "Sentry Tower",
     cost: 633000,
     boostPercent: 5,
-    sizeString: "6x6",
+    sizeString: "2x2",
     unlockLevel: 48
   },
   {
     name: "Shattered Arch",
     cost: 701770,
     boostPercent: 7,
-    sizeString: "8x8",
+    sizeString: "3x3",
     unlockLevel: 52
   },
   {
     name: "Netherworld Portal",
     cost: 803444,
     boostPercent: 7,
-    sizeString: "6x6",
+    sizeString: "3x3",
     unlockLevel: 56
   },
   {
     name: "Gilded Tree",
     cost: 977777,
     boostPercent: 7,
-    sizeString: "8x8",
+    sizeString: "2x2",
     unlockLevel: 60
   },
   {
     name: "Flame Spirit Tree",
     cost: 1114490,
     boostPercent: 7,
-    sizeString: "8x8",
+    sizeString: "2x2",
     unlockLevel: 63
   },
   {
     name: "Necrotic Tree",
     cost: 1243555,
     boostPercent: 5,
-    sizeString: "6x6",
+    sizeString: "2x2",
     unlockLevel: 67
   },
   {
     name: "Golden Tree",
     cost: 1544777,
     boostPercent: 8,
-    sizeString: "10x10",
+    sizeString: "2x2",
     unlockLevel: 70
   }
 ];

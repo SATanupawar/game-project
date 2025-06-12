@@ -709,7 +709,7 @@ router.get('/debug-rewards/:chestId', async (req, res) => {
                         // Set amount to 1 for creatures
                         cardReward.amount = 0;
                         // Add creature name to the reward
-                        cardReward.creature_name = selectedReward.creature_name.toLowerCase();
+                        cardReward.creature_name = selectedReward.creature_name;
                         cardReward.rarity = selectedReward.rarity || 'common';
                         
                         // Add to user's creature inventory
@@ -718,8 +718,8 @@ router.get('/debug-rewards/:chestId', async (req, res) => {
                         }
                         
                         user.creature_inventory.push({
-                            creature_type: selectedReward.creature_name.toLowerCase(),
-                            name: selectedReward.creature_name.toLowerCase(),
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
                             count: 1,
                             rarity: selectedReward.rarity || 'common',
                             image: selectedReward.image || null
@@ -1080,7 +1080,7 @@ router.post('/process-chest/:userId', async (req, res) => {
                         // Set amount to 1 for creatures
                         cardReward.amount = 0;
                         // Add creature name to the reward
-                        cardReward.creature_name = selectedReward.creature_name.toLowerCase();
+                        cardReward.creature_name = selectedReward.creature_name;
                         cardReward.rarity = selectedReward.rarity || 'common';
                         
                         // Add to user's creature inventory
@@ -1089,8 +1089,8 @@ router.post('/process-chest/:userId', async (req, res) => {
                         }
                         
                         user.creature_inventory.push({
-                            creature_type: selectedReward.creature_name.toLowerCase(),
-                            name: selectedReward.creature_name.toLowerCase(),
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
                             count: 1,
                             rarity: selectedReward.rarity || 'common',
                             image: selectedReward.image || null
@@ -1553,7 +1553,7 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
                         // Set amount to 1 for creatures
                         cardReward.amount = 0;
                         // Add creature name to the reward
-                        cardReward.creature_name = selectedReward.creature_name.toLowerCase();
+                        cardReward.creature_name = selectedReward.creature_name;
                         cardReward.rarity = selectedReward.rarity || 'common';
                         
                         // Add to user's creature inventory
@@ -1562,8 +1562,8 @@ router.post('/process-object/:userId/:objectId', async (req, res) => {
                         }
                         
                         user.creature_inventory.push({
-                            creature_type: selectedReward.creature_name.toLowerCase(),
-                            name: selectedReward.creature_name.toLowerCase(),
+                            creature_type: selectedReward.creature_name,
+                            name: selectedReward.creature_name,
                             count: 1,
                             rarity: selectedReward.rarity || 'common',
                             image: selectedReward.image || null

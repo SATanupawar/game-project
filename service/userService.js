@@ -1,4 +1,5 @@
 const User = require('../models/user');
+const UserLevel = require('../models/userLevel');
 const Building = require('../models/building');
 const Creature = require('../models/creature');
 const mongoose = require('mongoose');
@@ -3177,7 +3178,7 @@ async function removeBoostFromUser(userIdParam, boostIdParam) {
         }
 
         // Find the index of the boost in the user's array
-        const boostIndex = user.boosts.findIndex(b =>
+        const boostIndex = user.boosts.findIndex(b => 
             b.boost_id && b.boost_id === boostSlug
         );
 
@@ -5246,6 +5247,58 @@ async function speedUpCreatureUnlock(userId, creatureId) {
     }
 }
 
+async function handleCreatureUnlocks(userId, newLevel) {
+    try {
+        // Get user level data
+        const userLevel = await UserLevel.findOne({ level: newLevel });
+        if (!userLevel || !userLevel.unlockable_creatures.length) {
+            return [];
+        }
+
+        // Get user data
+        const user = await User.findOne({ userId });
+        if (!user) throw new Error('User not found');
+
+        // Get all creatures data by creature_Id (slug)
+        const creatures = await Creature.find({
+            creature_Id: { $in: userLevel.unlockable_creatures }
+        });
+
+        const unlockedCreatures = [];
+
+        for (const creature of creatures) {
+            const creatureInventoryItem = {
+                creature_id: creature._id,
+                creature_type: creature.creature_Id, // slug
+                name: creature.name,
+                count: 1,
+                rarity: creature.type,
+                image: creature.image
+            };
+
+            // Check if creature already exists in inventory (by _id)
+            const existingIndex = user.creature_inventory.findIndex(
+                item => item.creature_id && item.creature_id.toString() === creature._id.toString()
+            );
+
+            if (existingIndex === -1) {
+                user.creature_inventory.push(creatureInventoryItem);
+                unlockedCreatures.push(creatureInventoryItem);
+            } else {
+                user.creature_inventory[existingIndex].count += 1;
+                unlockedCreatures.push(user.creature_inventory[existingIndex]);
+            }
+        }
+
+        await user.save();
+        return unlockedCreatures;
+    } catch (error) {
+        console.error('Error handling creature unlocks:', error);
+        throw error;
+    }
+}
+
+
 // Export the function
 module.exports = {
     getUserWithDetails,
@@ -5286,6 +5339,6 @@ module.exports = {
     fixBuildingCreatureRelationships,
     updateCreatureSlotsBasedOnSubscription,
     getCreatureInventory,
-    speedUpCreatureUnlock
+    handleCreatureUnlocks
 };
     

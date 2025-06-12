@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const buildingService = require('../service/buildingService');
+const { createRateLimiter } = require('../middleware/rateLimiter');
+
+// Apply general rate limiter to all building routes
+router.use(createRateLimiter('general'));
 
 // Get all buildings
 router.get('/', async (req, res) => {

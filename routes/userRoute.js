@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { createRateLimiter } = require('../middleware/rateLimiter');
 const userService = require('../service/userService');
 const currencyService = require('../service/currencyService');
 const { 
@@ -28,6 +29,15 @@ const mongoose = require('mongoose');
 const User = require('../models/user');
 const UserLevel = require('../models/userLevel');
 const Boost = require('../models/boost');
+
+// Apply general rate limiter to all user routes
+router.use(createRateLimiter('general'));
+
+// Stricter rate limit for building operations
+router.use('/:userId/buildings', createRateLimiter('gameActions'));
+
+// Stricter rate limit for building construction
+router.use('/:userId/building-construction', createRateLimiter('gameActions'));
 
 // Get all users
 router.get('/', async (req, res) => {
@@ -217,6 +227,28 @@ router.post('/', async (req, res) => {
             console.log(`Creature ${creatureName} not added because no building was specified`);
         }
 
+        // Add default level 1 creature to inventory for new users
+        if ((level === undefined || level === 1) && !existingUser) {
+            // Find the azurescale_dragon creature template
+            const azurescaleDragon = await Creature.findOne({ creature_Id: 'azurescale_dragon' });
+            if (azurescaleDragon) {
+                // Prepare inventory item
+                const creatureInventoryItem = {
+                    creature_id: azurescaleDragon._id,
+                    creature_type: azurescaleDragon.creature_Id,
+                    name: azurescaleDragon.name,
+                    count: 1,
+                    rarity: azurescaleDragon.type,
+                    image: azurescaleDragon.image
+                };
+                // Add to user's creature_inventory
+                if (!user.creature_inventory) user.creature_inventory = [];
+                user.creature_inventory.push(creatureInventoryItem);
+            } else {
+                console.warn('azurescale_dragon creature template not found!');
+            }
+        }
+
         // Save the user
         await user.save();
 
@@ -233,6 +265,7 @@ router.post('/', async (req, res) => {
             gold_coins: user.gold_coins,
             buildings: user.buildings || [],
             creatures: user.creatures || [],
+            creature_inventory: user.creature_inventory || [],
             currency: user.currency || {
                 gems: 0,
                 arcane_energy: 0,
@@ -3634,14 +3667,29 @@ router.post('/:userId/add-xp', async (req, res) => {
         user.level = newLevel;
         user.xp = remainingXP;
 
+        // Handle creature unlocks if user leveled up
+        let unlockedCreatures = [];
+        if (levelsGained > 0) {
+            try {
+                const userService = require('../service/userService');
+                unlockedCreatures = await userService.handleCreatureUnlocks(userId, newLevel);
+            } catch (error) {
+                console.error('Error handling creature unlocks:', error);
+            }
+        }
+
         // Calculate progress to next level
         let levelCompletionPercentage = 0;
         let xpNeededForNextLevel = 0;
         
-        if (nextLevelData) {
-            const xpRange = nextLevelData.required_xp - currentLevelData.required_xp;
-            levelCompletionPercentage = Math.floor((remainingXP / xpRange) * 100);
-            xpNeededForNextLevel = nextLevelData.required_xp - (currentLevelData.required_xp + remainingXP);
+        // Get next level data (for the level we just reached)
+        const nextLevelDataAfterUpdate = await UserLevel.findOne({ level: user.level + 1 });
+        
+        if (nextLevelDataAfterUpdate) {
+            // Get XP needed for next level directly from userlevels
+            xpNeededForNextLevel = nextLevelDataAfterUpdate.required_xp;
+            // Calculate percentage based on current XP vs next level's total XP
+            levelCompletionPercentage = Math.floor((remainingXP / xpNeededForNextLevel) * 100);
         }
 
         // AUTOMATICALLY ADD SAME XP TO BATTLE PASS
@@ -3675,7 +3723,10 @@ router.post('/:userId/add-xp', async (req, res) => {
                 levels_gained: levelsGained,
                 xp_added: xp_amount,
                 total_xp: totalXP,
-                remaining_xp: remainingXP
+                remaining_xp: remainingXP,
+                xp_needed_for_next_level: xpNeededForNextLevel,
+                progress_percentage: levelCompletionPercentage,
+                unlocked_creatures: unlockedCreatures
             }
         };
 
@@ -3738,13 +3789,13 @@ router.post('/:userId/add-xp', async (req, res) => {
             }
         }
 
-        res.status(200).json(response);
-
+        res.json(response);
     } catch (error) {
         console.error('Error in add-xp route:', error);
         res.status(500).json({
             success: false,
-            message: `Server error: ${error.message}`
+            message: 'Failed to add XP',
+            error: error.message
         });
     }
 });

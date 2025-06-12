@@ -19,7 +19,9 @@ const userLevelSchema = new mongoose.Schema({
         type: Number,
         required: true,
         min: 0
-    }
+    },
+    unlockable_creatures: [{ type: String }], // Array of creature IDs that unlock at this level
+    
 }, {
     timestamps: true
 });

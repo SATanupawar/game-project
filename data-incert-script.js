@@ -3,6 +3,8 @@ const User = require('./models/user');
 const Building = require('./models/building');
 const Boost = require('./models/boost');
 const Currency = require('./models/currency');
+const UserLevel = require('./models/userLevel');
+const Creature = require('./models/creature');
 require('dotenv').config();
 
 async function createBuildings() {
@@ -35,7 +37,7 @@ async function createBuildings() {
                 cost: 50000,
                 gold_coins: 3600,
                 generation_interval: 120,
-                size: { x: 3, y: 3 },
+                size: { x: 2, y: 3 },
                 constructionTime: 120, // 120 minutes (2 hours)
                 unlockLevel: 8
             },
@@ -55,7 +57,7 @@ async function createBuildings() {
                 cost: 75000,
                 gold_coins: 1200,
                 generation_interval: 60,
-                size: { x: 3, y: 2 },
+                size: { x: 2, y: 3 },
                 constructionTime: 120,
                 unlockLevel: 13
             },
@@ -105,7 +107,7 @@ async function createBuildings() {
                 cost: 47000,
                 gold_coins: 2400,
                 generation_interval: 240,
-                size: { x: 4, y: 4 },
+                size: { x: 3, y: 3 },
                 constructionTime: 240,
                 unlockLevel: 28
             },
@@ -145,7 +147,7 @@ async function createBuildings() {
                 cost: 175000,
                 gold_coins: 12000,
                 generation_interval: 120,
-                size: { x: 2, y: 2 },
+                size: { x: 3, y: 3 },
                 constructionTime: 120,
                 unlockLevel: 40
             },
@@ -185,7 +187,7 @@ async function createBuildings() {
                 cost: 196760,
                 gold_coins: 840,
                 generation_interval: 120,
-                size: { x: 2, y: 2 },
+                size: { x: 3, y: 2 },
                 constructionTime: 360,
                 unlockLevel: 53
             },
@@ -215,7 +217,7 @@ async function createBuildings() {
                 cost: 108550,
                 gold_coins: 14400,
                 generation_interval: 120,
-                size: { x: 2, y: 2 },
+                size: { x: 3, y: 2 },
                 constructionTime: 120,
                 unlockLevel: 65
             },
@@ -225,7 +227,7 @@ async function createBuildings() {
                 cost: 216110,
                 gold_coins: 2520,
                 generation_interval: 180,
-                size: { x: 3, y: 3 },
+                size: { x: 2, y: 3 },
                 constructionTime: 180,
                 unlockLevel: 70
             },
@@ -493,6 +495,8 @@ async function createCurrencies() {
         console.error('Error creating currencies:', error);
     }
 }
+
+
 
 async function main() {
     try {
