@@ -412,7 +412,6 @@ const userSchema = new mongoose.Schema({
     gold_coins: {
         type: Number,
         required: true,
-        max: 100000000
     },
     // Card packs obtained from battle pass and other sources
     card_packs: [userCardPackSchema],
@@ -829,6 +828,21 @@ const userSchema = new mongoose.Schema({
         default: () => ({})
     },
     placed_paths: [placedPathSchema],
+    // BEGINNER'S BUNDLE OFFER TRACKING
+    beginner_bundle_offer: {
+        shown_today: { type: Number, default: 0 },
+        last_shown_date: { type: Date }
+    },
+    // RESOURCE-BASED OFFERS: no schema needed for offers, but can add analytics if needed
+    // ANIMA VIDEO ADS TRACKING
+    video_ads_today_count: { type: Number, default: 0 },
+    last_video_ad_date: { type: Date },
+    // BATTLE LOSS STREAK OFFERS
+    battle_loss_streak: { type: Number, default: 0 },
+    battle_loss_creatures: [{
+        date: { type: Date, default: Date.now },
+        creatures: [{ creature_id: String, rarity: String }]
+    }],
 }, {
     timestamps: true,
     // Allow fields not specified in the schema

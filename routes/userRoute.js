@@ -29,6 +29,8 @@ const mongoose = require('mongoose');
 const User = require('../models/user');
 const UserLevel = require('../models/userLevel');
 const Boost = require('../models/boost');
+const Offer = require('../models/offer');
+const Creature = require('../models/creature');
 
 // Apply general rate limiter to all user routes
 router.use(createRateLimiter('general'));
@@ -142,7 +144,19 @@ router.post('/', async (req, res) => {
                 gold: gold_coins || 1000, // Initialize with same value as gold_coins
                 anima: 0,
                 last_updated: new Date()
-            }
+            },
+            // Beginner's Bundle Offer eligibility
+            beginner_bundle_offer: {
+                eligible_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                shown_today: 0,
+                last_shown_date: null
+            },
+            // Video ad tracking
+            video_ads_today_count: 0,
+            last_video_ad_date: null,
+            // Battle loss streak tracking
+            battle_loss_streak: 0,
+            battle_loss_creatures: []
         });
 
         // Add trophies if provided
@@ -2729,13 +2743,23 @@ router.post('/:userId/currency/:currencyType', async (req, res) => {
             
             // Check if the operation itself was successful
             if (!opResult.success) {
-                // If the operation failed (e.g., insufficient funds), return appropriate error
+                // Fetch the relevant offer from the Offer table
+                const Offer = require('../models/offer');
+                let offers = await Offer.find({
+                    offer_type: 'resource',
+                    'offer_data.resourceType': opResult.type
+                });
+
+                // Format offers for response (optional: only send price/gems/gold/arcane_energy fields)
+                offers = offers.map(o => o.offer_data);
+
                 return res.status(400).json({
                     success: false,
                     message: opResult.message,
                     data: {
                         currency_type: opResult.type,
-                        current_value: opResult.current_value
+                        current_value: opResult.current_value,
+                        offers: offers // <-- here are the offers from your DB
                     }
                 });
             }
@@ -4017,5 +4041,245 @@ router.get('/boosts/all', async (req, res) => {
             message: 'Server error',
             error: err.message
         });
+    }
+});
+
+// POST /api/users/:userId/assign-beginner-bundle
+router.post('/:userId/assign-beginner-bundle', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findOne({ userId });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Daily reset logic
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
+        let shownToday = user.beginner_bundle_offer?.shown_today || 0;
+        let lastShownDate = user.beginner_bundle_offer?.last_shown_date;
+        let lastShownStr = lastShownDate ? lastShownDate.toISOString().slice(0, 10) : null;
+
+        if (lastShownStr !== todayStr) {
+            shownToday = 0;
+        }
+
+        if (shownToday >= 2) {
+            return res.status(429).json({ success: false, message: 'Beginner bundle offer can only be shown 2 times per day.' });
+        }
+
+        // Find the template offer
+        const templateOffer = await Offer.findOne({ offer_type: 'beginner_bundle' });
+        if (!templateOffer) return res.status(404).json({ success: false, message: 'Template offer not found' });
+
+        // Assign the offer (create a user-specific offer)
+        const userOffer = new Offer({
+            offer_type: templateOffer.offer_type,
+            offer_data: templateOffer.offer_data,
+            status: 'active',
+            shown_count: shownToday + 1, // <-- increment here
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            userId: user.userId
+        });
+        await userOffer.save();
+
+        // Update user's tracker
+        user.beginner_bundle_offer = {
+            shown_today: shownToday + 1,
+            last_shown_date: today
+        };
+        await user.save();
+
+        res.json({ success: true, offer: userOffer, shown_today: user.beginner_bundle_offer.shown_today });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// POST /api/users/:userId/watch-anima-ad
+router.post('/:userId/watch-anima-ad', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findOne({ userId });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Daily reset logic
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
+        let adCount = user.video_ads_today_count || 0;
+        let lastAdDate = user.last_video_ad_date;
+        let lastAdStr = lastAdDate ? lastAdDate.toISOString().slice(0, 10) : null;
+
+        if (lastAdStr !== todayStr) {
+            adCount = 0;
+        }
+
+        if (adCount >= 10) {
+            return res.status(429).json({
+                success: false,
+                message: 'Daily video ad limit reached. Redirect to Card Packs tab in IAP screen.',
+                redirect: true
+            });
+        }
+
+        // Increment ad count and update date
+        user.video_ads_today_count = adCount + 1;
+        user.last_video_ad_date = today;
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Ad watched. Anima reward granted.',
+            video_ads_today_count: user.video_ads_today_count,
+            remaining: 10 - user.video_ads_today_count
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * @route   POST /api/users/:userId/battle-loss
+ * @desc    Record a battle loss and return an offer
+ * @access  Private
+ */
+router.post('/:userId/battle-loss', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findOne({ userId });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Fetch the user's current battle_selected_creatures
+        const selected = user.battle_selected_creatures || [];
+        if (!Array.isArray(selected) || selected.length === 0) {
+            return res.status(400).json({ success: false, message: 'No battle_selected_creatures found for user.' });
+        }
+
+        // For each, get rarity from Creature model
+        const creaturesWithRarity = [];
+        for (const c of selected) {
+            let rarity = null;
+            if (c.rarity) {
+                rarity = c.rarity;
+            } else if (c.creature_id) {
+                // Try to find by _id
+                const creatureDoc = await Creature.findById(c.creature_id);
+                if (creatureDoc) rarity = creatureDoc.type;
+            }
+            creaturesWithRarity.push({
+                creature_id: c.creature_id ? c.creature_id.toString() : null,
+                rarity: rarity ? rarity.toLowerCase() : 'common'
+            });
+        }
+
+        // Update streak and history
+        let streak = user.battle_loss_streak || 0;
+        let creaturesArr = user.battle_loss_creatures || [];
+
+        streak += 1;
+        creaturesArr.push({
+            date: new Date(),
+            creatures: creaturesWithRarity
+        });
+
+        // Keep only last 3
+        if (creaturesArr.length > 3) creaturesArr = creaturesArr.slice(-3);
+
+        let offer = null;
+
+        if (streak >= 3 && creaturesArr.length === 3) {
+            // Count rarity usage
+            const rarityCount = {};
+            creaturesArr.forEach(loss => {
+                loss.creatures.forEach(c => {
+                    const r = c.rarity;
+                    rarityCount[r] = (rarityCount[r] || 0) + 1;
+                });
+            });
+            // Find most used rarity
+            let maxRarity = null, maxCount = 0;
+            for (const [rarity, count] of Object.entries(rarityCount)) {
+                if (count > maxCount) {
+                    maxRarity = rarity;
+                    maxCount = count;
+                }
+            }
+            // Map to offer
+            let packs = [];
+            if (maxRarity === 'common') packs = ['Magical Pack', 'Common Pack'];
+            if (maxRarity === 'rare') packs = ['Magical Pack', 'Rare Pack'];
+            if (maxRarity === 'epic') packs = ['Magical Pack', 'Epic Pack'];
+            if (maxRarity === 'legendary') packs = ['Magical Pack', 'Legendary Pack'];
+
+            // Create offer
+            offer = {
+                offer_type: 'battle_loss',
+                offer_data: { packs, rarity: maxRarity },
+                status: 'active'
+            };
+
+            // Reset streak and history
+            streak = 0;
+            creaturesArr = [];
+        }
+
+        // Save user
+        user.battle_loss_streak = streak;
+        user.battle_loss_creatures = creaturesArr;
+        await user.save();
+
+        if (offer) {
+            return res.json({ success: true, offer });
+        } else {
+            return res.json({ success: true, message: 'Loss recorded', battle_loss_streak: streak });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/creatures/:userId/upgrade-milestone', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { creatureId, creature2Id } = req.body;
+
+        // If only one creatureId is provided, return error + offer
+        if (!creatureId || !creature2Id) {
+            // Find the provided creature's rarity
+            let missingCreatureId = creatureId || creature2Id;
+            let offer = null;
+
+            if (missingCreatureId) {
+                const creature = await Creature.findById(missingCreatureId);
+                if (creature) {
+                    // Option 1: Use static mapping
+                    let packs = [];
+                    const rarity = creature.type.toLowerCase();
+                    if (rarity === 'common') packs = ['Magical Pack', 'Common Pack'];
+                    if (rarity === 'rare') packs = ['Magical Pack', 'Rare Pack'];
+                    if (rarity === 'epic') packs = ['Magical Pack', 'Epic Pack'];
+                    if (rarity === 'legendary') packs = ['Magical Pack', 'Legendary Pack'];
+
+                    offer = {
+                        offer_type: 'evolution_fail',
+                        offer_data: { packs, rarity },
+                        status: 'active'
+                    };
+
+                    // Option 2: If you want to fetch from Offer table:
+                    // const offers = await Offer.find({ offer_type: 'evolution_fail', 'offer_data.rarity': rarity });
+                    // offer = offers.length ? offers[0].offer_data : null;
+                }
+            }
+
+            return res.status(400).json({
+                success: false,
+                message: "Both creature IDs are required",
+                offer: offer
+            });
+        }
+
+        // ...rest of your merge logic...
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
