@@ -412,6 +412,7 @@ const userSchema = new mongoose.Schema({
     gold_coins: {
         type: Number,
         required: true,
+        max: 10000000000000000000
     },
     // Card packs obtained from battle pass and other sources
     card_packs: [userCardPackSchema],
