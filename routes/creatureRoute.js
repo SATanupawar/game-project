@@ -5,6 +5,7 @@ const Creature = require('../models/creature');
 const User = require('../models/user');
 const CreatureSlot = require('../models/creatureSlot');
 const mongoose = require('mongoose');
+const Offer = require('../models/offer');
 
 // Add this helper function at the top of the file, right after the imports
 /**
@@ -591,9 +592,11 @@ router.post('/speed-up-upgrade/:userId', async (req, res) => {
 
         // Check if user has enough gems
         if (!user.currency || user.currency.gems < gemCost) {
+            const offers = await Offer.find({ offer_type: 'resource', 'offer_data.resourceType': 'gems' });
             return res.status(400).json({
                 success: false,
-                message: `Not enough gems. Required: ${gemCost}`
+                message: `Not enough gems. Required: ${gemCost}`,
+                offers: offers.map(o => o.offer_data)
             });
         }
 
@@ -2243,6 +2246,59 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
             success: false,
             message: `Server error: ${error.message}`
         });
+    }
+});
+
+router.post('/:userId/sell', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { creatureId } = req.body; // This is now a string like "tulpar" or "blood_oni"
+
+        const user = await User.findOne({ userId });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Find creature in user's collection by creature_Id_reference or creature_type
+        const userCreatureIndex = user.creatures.findIndex(
+            c => c.creature_Id_reference === creatureId || c.creature_type === creatureId
+        );
+        if (userCreatureIndex === -1) {
+            return res.status(404).json({ success: false, message: 'Creature not found in user collection' });
+        }
+        const userCreature = user.creatures[userCreatureIndex];
+
+        // Fetch base anima from Creature template
+        let baseAnima = 100;
+        const templateCreature = await Creature.findOne({ creature_Id: userCreature.creature_Id_reference || userCreature.creature_type });
+        if (templateCreature && templateCreature.base_anima) {
+            baseAnima = templateCreature.base_anima;
+        }
+
+        // Calculate anima to credit
+        const animaToCredit = Math.floor((baseAnima * (userCreature.level || 1)) / 2);
+
+        // Remove from user's creatures
+        user.creatures.splice(userCreatureIndex, 1);
+
+        // Remove from battle_selected_creatures if present
+        if (user.battle_selected_creatures && Array.isArray(user.battle_selected_creatures)) {
+            user.battle_selected_creatures = user.battle_selected_creatures.filter(
+                c => c.creature_Id_reference !== creatureId && c.creature_type !== creatureId
+            );
+        }
+
+        // Credit anima
+        if (!user.currency) user.currency = {};
+        user.currency.anima = (user.currency.anima || 0) + animaToCredit;
+
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: 'Creature sold successfully',
+            anima_credited: animaToCredit
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 

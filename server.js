@@ -54,6 +54,7 @@ const subscriptionRoutes = require('./routes/subscriptionRoute');
 const battlePassProgressRoutes = require('./routes/battlePassProgressRoute');
 const subscriptionService = require('./service/subscriptionService');
 const gameLiftLogsRoutes = require('./routes/logs');
+const offerRoute = require('./routes/offerRoute');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -85,6 +86,7 @@ app.use('/api/logs', logRoutes); // Logging routes - normally these would be adm
 app.use('/api/matchmaking', matchmakingRoutes); // Add matchmaking routes
 app.use('/api/quests', questRoutes); // Quest routes
 app.use('/api', gameLiftLogsRoutes); // GameLift logs route
+app.use('/api/offers', offerRoute); // Offer routes
 
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);

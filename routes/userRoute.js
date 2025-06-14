@@ -31,6 +31,7 @@ const UserLevel = require('../models/userLevel');
 const Boost = require('../models/boost');
 const Offer = require('../models/offer');
 const Creature = require('../models/creature');
+const Building = require('../models/building');
 
 // Apply general rate limiter to all user routes
 router.use(createRateLimiter('general'));
@@ -4051,6 +4052,21 @@ router.post('/:userId/assign-beginner-bundle', async (req, res) => {
         const user = await User.findOne({ userId });
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+        // Find the template offer
+        const templateOffer = await Offer.findOne({ offer_type: 'beginner_bundle' });
+        if (!templateOffer) return res.status(404).json({ success: false, message: 'Template offer not found' });
+
+        // Calculate expiry (30 days from user creation)
+        const userCreatedAt = user.createdAt;
+        const expiresAt = new Date(userCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const now = new Date();
+        if (now > expiresAt) {
+            return res.status(403).json({
+                success: false,
+                message: 'Beginner bundle offer expired for this user.'
+            });
+        }
+
         // Daily reset logic
         const today = new Date();
         const todayStr = today.toISOString().slice(0, 10);
@@ -4066,29 +4082,24 @@ router.post('/:userId/assign-beginner-bundle', async (req, res) => {
             return res.status(429).json({ success: false, message: 'Beginner bundle offer can only be shown 2 times per day.' });
         }
 
-        // Find the template offer
-        const templateOffer = await Offer.findOne({ offer_type: 'beginner_bundle' });
-        if (!templateOffer) return res.status(404).json({ success: false, message: 'Template offer not found' });
-
-        // Assign the offer (create a user-specific offer)
-        const userOffer = new Offer({
-            offer_type: templateOffer.offer_type,
-            offer_data: templateOffer.offer_data,
-            status: 'active',
-            shown_count: shownToday + 1, // <-- increment here
-            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            userId: user.userId
-        });
-        await userOffer.save();
-
-        // Update user's tracker
+        // Update user tracker
         user.beginner_bundle_offer = {
             shown_today: shownToday + 1,
-            last_shown_date: today
+            last_shown_date: today,
+            expires_at: expiresAt
         };
         await user.save();
 
-        res.json({ success: true, offer: userOffer, shown_today: user.beginner_bundle_offer.shown_today });
+        // Return the template offer with correct expires_at
+        res.json({
+            success: true,
+            offer: {
+                ...templateOffer.toObject(),
+                expires_at: expiresAt,
+                created_at: user.createdAt 
+            },
+            shown_today: user.beginner_bundle_offer.shown_today
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -4236,50 +4247,3 @@ router.post('/:userId/battle-loss', async (req, res) => {
     }
 });
 
-router.put('/creatures/:userId/upgrade-milestone', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const { creatureId, creature2Id } = req.body;
-
-        // If only one creatureId is provided, return error + offer
-        if (!creatureId || !creature2Id) {
-            // Find the provided creature's rarity
-            let missingCreatureId = creatureId || creature2Id;
-            let offer = null;
-
-            if (missingCreatureId) {
-                const creature = await Creature.findById(missingCreatureId);
-                if (creature) {
-                    // Option 1: Use static mapping
-                    let packs = [];
-                    const rarity = creature.type.toLowerCase();
-                    if (rarity === 'common') packs = ['Magical Pack', 'Common Pack'];
-                    if (rarity === 'rare') packs = ['Magical Pack', 'Rare Pack'];
-                    if (rarity === 'epic') packs = ['Magical Pack', 'Epic Pack'];
-                    if (rarity === 'legendary') packs = ['Magical Pack', 'Legendary Pack'];
-
-                    offer = {
-                        offer_type: 'evolution_fail',
-                        offer_data: { packs, rarity },
-                        status: 'active'
-                    };
-
-                    // Option 2: If you want to fetch from Offer table:
-                    // const offers = await Offer.find({ offer_type: 'evolution_fail', 'offer_data.rarity': rarity });
-                    // offer = offers.length ? offers[0].offer_data : null;
-                }
-            }
-
-            return res.status(400).json({
-                success: false,
-                message: "Both creature IDs are required",
-                offer: offer
-            });
-        }
-
-        // ...rest of your merge logic...
-
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});

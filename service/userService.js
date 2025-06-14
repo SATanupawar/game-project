@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const Boost = require('../models/boost');
 const BuildingDecoration = require('../models/buildingDecoration');
 const questService = require('./questService');
+const Offer = require('../models/offer');
 
 async function getUserWithDetails(userIdParam) {
     try {
@@ -871,6 +872,30 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
         }
         console.log('Building template found:', buildingTemplate.buildingId);
 
+        // 1. Level check
+        if (user.level < buildingTemplate.unlockLevel) {
+            return {
+                success: false,
+                message: `User level too low. Required: ${buildingTemplate.unlockLevel}, current: ${user.level}`,
+                current_level: user.level,
+                required_level: buildingTemplate.unlockLevel
+            };
+        }
+
+        // 2. Gold check & deduct (as before)
+        if (user.gold_coins < buildingTemplate.cost) {
+            // Fetch gold offers from Offer collection
+            const offers = await Offer.find({ offer_type: 'resource', 'offer_data.resourceType': 'gold' });
+            return {
+                success: false,
+                message: 'Not enough gold to place this building.',
+                current_gold: user.gold_coins,
+                offers: offers.map(o => o.offer_data)
+            };
+        }
+        user.gold_coins -= buildingTemplate.cost;
+        if (user.currency) user.currency.gold = user.gold_coins;
+
         // Validate position
         if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
             return { success: false, message: "Valid position (x, y) is required" };
@@ -908,7 +933,8 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             data: {
                 user: {
                     userId: user.userId,
-                    user_name: user.user_name
+                    user_name: user.user_name,
+                    current_gold: user.gold_coins
                 },
                 building: newBuilding
             }
@@ -1094,6 +1120,7 @@ async function assignBuildingToUser(userIdParam, buildingIdParam, position, crea
             // Continue with response even if quest update fails
         }
         
+        response.data.current_gold = user.gold_coins;
         return response;
     } catch (error) {
         console.error('Error in assignBuildingToUser:', error);
@@ -4088,9 +4115,11 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             
             // Check if user has enough anima
             if (!user.currency.anima || user.currency.anima < animaCost) {
-                return {
+                const offers = await Offer.find({ offer_type: 'resource', 'offer_data.resourceType': 'anima' });
+             return {
                     success: false,
                     message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
+                    
                 };
             }
         }
@@ -4272,7 +4301,7 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             user.markModified('creature_inventory');
         } else {
             // Subtract anima from user currency for normal purchase
-            console.log(`Purchasing with anima. Cost: ${animaCost}, Current anima: ${user.currency.anima}`);
+            console.log(`Purchasing with anima. Cost: ${animaCost}, Current anima: ${user.currency.anima} watch video and get anima `);
             user.currency.anima -= animaCost;
             user.markModified('currency');
         }
@@ -5207,9 +5236,11 @@ async function speedUpCreatureUnlock(userId, creatureId) {
         
         // Check if user has enough gems
         if (!user.currency.gems || user.currency.gems < gemsRequired) {
+            const offers = await Offer.find({ offer_type: 'resource', 'offer_data.resourceType': 'gems' });
             return {
                 success: false,
-                message: `Not enough gems. Required: ${gemsRequired}, Available: ${user.currency.gems || 0}`
+                message: `Not enough gems. Required: ${gemsRequired}, Available: ${user.currency.gems || 0}`,
+                offers: offers.map(o => o.offer_data)
             };
         }
         
@@ -5339,6 +5370,7 @@ module.exports = {
     fixBuildingCreatureRelationships,
     updateCreatureSlotsBasedOnSubscription,
     getCreatureInventory,
-    handleCreatureUnlocks
+    handleCreatureUnlocks,
+    speedUpCreatureUnlock
 };
     
