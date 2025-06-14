@@ -62,7 +62,7 @@ router.post('/ticket', async (req, res) => {
 router.post('/:userId/ticket', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { trophyCount, region, playerAttributes, playerIds } = req.body;
+        const { trophyCount, playerAttributes, playerIds } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -78,7 +78,6 @@ router.post('/:userId/ticket', async (req, res) => {
         if ((!playerAttributes || typeof playerAttributes !== 'object') && trophyCount) {
             finalPlayerAttributes = {
                 skill: trophyCount,
-                region: region || 'default'
             };
         } else if (!playerAttributes || typeof playerAttributes !== 'object') {
             return res.status(400).json({
