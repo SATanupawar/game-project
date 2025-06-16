@@ -4116,7 +4116,7 @@ async function purchaseCreature(userId, creatureType, slotNumber = 1) {
             // Check if user has enough anima
             if (!user.currency.anima || user.currency.anima < animaCost) {
                 const offers = await Offer.find({ offer_type: 'resource', 'offer_data.resourceType': 'anima' });
-             return {
+                return {
                     success: false,
                     message: `Not enough anima. Required: ${animaCost}, Available: ${user.currency.anima || 0}`
                     

@@ -61,6 +61,20 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
             PlayerAttributes: formattedAttributes
         }));
 
+        // Build PlayerLatencies array if latencies are provided
+        let playerLatencies = [];
+        if (playerAttributes.latencies && typeof playerAttributes.latencies === 'object') {
+            Object.entries(playerAttributes.latencies).forEach(([region, latency]) => {
+                if (typeof latency === 'number') {
+                    playerLatencies.push({
+                        PlayerId: userId,
+                        RegionIdentifier: region,
+                        LatencyInMilliseconds: latency
+                    });
+                }
+            });
+        }
+
         // Generate a unique ticket ID
         const ticketId = `ticket-${userId}-${uuidv4()}`;
 
@@ -75,7 +89,9 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
         const params = {
             ConfigurationName: configName,
             Players: players,
-            TicketId: ticketId
+            TicketId: ticketId,
+            // Add PlayerLatencies only if present
+            ...(playerLatencies.length > 0 ? { PlayerLatencies: playerLatencies } : {})
         };
 
         console.log('Starting matchmaking with params:', JSON.stringify(params, null, 2));
