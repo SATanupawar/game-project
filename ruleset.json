@@ -1,0 +1,13 @@
+{
+  "name": "1v1-SimpleLatencyMatching",
+  "ruleLanguageVersion": "1.0",
+  "playerAttributes": [
+    { "name": "latency_ap_south_1", "type": "number" },
+    { "name": "latency_us_east_1", "type": "number" }
+  ],
+  "teams": [
+    { "name": "team1", "minPlayers": 1, "maxPlayers": 1 },
+    { "name": "team2", "minPlayers": 1, "maxPlayers": 1 }
+  ],
+  "rules": []
+}

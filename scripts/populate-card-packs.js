@@ -905,347 +905,382 @@ async function populateCardPacks() {
             cost: 400,
             currency_type: 'gems',
             cards: [
-                // Card 1 - Common Monsters (Each has 15% chance)
+                // Card 1 - Anima 45
                 {
                     card_number: 1,
                     rewards: [
+                        {
+                            reward_type: 'resource',
+                            resource_type: 'anima',
+                            amount: 45,
+                            chance: 100,
+                            probability_range: { min: 0, max: 100 }
+                        }
+                    ]
+                },
+                // Card 2 - Gold 10,110
+                {
+                    card_number: 2,
+                    rewards: [
+                        {
+                            reward_type: 'resource',
+                            resource_type: 'gold',
+                            amount: 10110,
+                            chance: 100,
+                            probability_range: { min: 0, max: 100 }
+                        }
+                    ]
+                },
+                // Card 3 - Arcane energy 8,210 (50%) / Gems 10 (50%)
+                {
+                    card_number: 3,
+                    rewards: [
+                        {
+                            reward_type: 'resource',
+                            resource_type: 'arcane_energy',
+                            amount: 8210,
+                            chance: 50,
+                            probability_range: { min: 0, max: 50 }
+                        },
+                        {
+                            reward_type: 'resource',
+                            resource_type: 'gems',
+                            amount: 10,
+                            chance: 50,
+                            probability_range: { min: 50, max: 100 }
+                        }
+                    ]
+                },
+                // Card 4 - Monsters with probabilities - Commons 75%, Rare 15%, Epic 5%, Legendary 5%
+                {
+                    card_number: 4,
+                    rewards: [
+                        // Common Monsters (75% total probability)
                         {
                             reward_type: 'creature',
                             creature_name: 'Iron Wyvern',
                             creature_Id: 'iron_wyvern',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 0, max: 10 }
+                            chance: 7.5,
+                            probability_range: { min: 0, max: 7.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Shadow Oni',
                             creature_Id: 'shadow_oni',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 10, max: 20 }
+                            chance: 7.5,
+                            probability_range: { min: 7.5, max: 15 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Forest Manticore',
                             creature_Id: 'forest_manticore',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 20, max: 30 }
+                            chance: 7.5,
+                            probability_range: { min: 15, max: 22.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Frost Djinn',
                             creature_Id: 'frost_djinn',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 30, max: 40 }
+                            chance: 7.5,
+                            probability_range: { min: 22.5, max: 30 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Mountain Drake',
                             creature_Id: 'mountain_drake',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 40, max: 50 }
+                            chance: 7.5,
+                            probability_range: { min: 30, max: 37.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Ancient Gargoyle',
                             creature_Id: 'ancient_gargoyle',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 50, max: 60 }
+                            chance: 7.5,
+                            probability_range: { min: 37.5, max: 45 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Earth Behemoth',
                             creature_Id: 'earth_behemoth',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 60, max: 70 }
+                            chance: 7.5,
+                            probability_range: { min: 45, max: 52.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Storm Dragon',
                             creature_Id: 'storm_dragon',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 70, max: 80 }
+                            chance: 7.5,
+                            probability_range: { min: 52.5, max: 60 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Azure Dragon',
                             creature_Id: 'azure_dragon',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 80, max: 90 }
+                            chance: 7.5,
+                            probability_range: { min: 60, max: 67.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Swift Tulpar',
                             creature_Id: 'swift_tulpar',
                             rarity: 'common',
-                            chance: 15,
-                            probability_range: { min: 90, max: 100 }
-                        }
-                    ]
-                },
-                // Card 2 - Rare Monsters (Each has 10% chance)
-                {
-                    card_number: 2,
-                    rewards: [
+                            chance: 7.5,
+                            probability_range: { min: 67.5, max: 75 }
+                        },
+                        
+                        // Rare Monsters (15% total probability)
                         {
                             reward_type: 'creature',
                             creature_name: 'Crystal Wyvern',
                             creature_Id: 'crystal_wyvern',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 0, max: 10 }
+                            chance: 1.5,
+                            probability_range: { min: 75, max: 76.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Void Oni',
                             creature_Id: 'void_oni',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 10, max: 20 }
+                            chance: 1.5,
+                            probability_range: { min: 76.5, max: 78 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Thunder Manticore',
                             creature_Id: 'thunder_manticore',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 20, max: 30 }
+                            chance: 1.5,
+                            probability_range: { min: 78, max: 79.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Desert Djinn',
                             creature_Id: 'desert_djinn',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 30, max: 40 }
+                            chance: 1.5,
+                            probability_range: { min: 79.5, max: 81 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Cloud Drake',
                             creature_Id: 'cloud_drake',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 40, max: 50 }
+                            chance: 1.5,
+                            probability_range: { min: 81, max: 82.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Crystal Gargoyle',
                             creature_Id: 'crystal_gargoyle',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 50, max: 60 }
+                            chance: 1.5,
+                            probability_range: { min: 82.5, max: 84 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Frost Behemoth',
                             creature_Id: 'frost_behemoth',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 60, max: 70 }
+                            chance: 1.5,
+                            probability_range: { min: 84, max: 85.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Shadow Dragon',
                             creature_Id: 'shadow_dragon',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 70, max: 80 }
+                            chance: 1.5,
+                            probability_range: { min: 85.5, max: 87 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Thunder Dragon',
                             creature_Id: 'thunder_dragon',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 80, max: 90 }
+                            chance: 1.5,
+                            probability_range: { min: 87, max: 88.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Golden Tulpar',
                             creature_Id: 'golden_tulpar',
                             rarity: 'rare',
-                            chance: 10,
-                            probability_range: { min: 90, max: 100 }
-                        }
-                    ]
-                },
-                // Card 3 - Epic Monsters (Each has 7% chance)
-                {
-                    card_number: 3,
-                    rewards: [
+                            chance: 1.5,
+                            probability_range: { min: 88.5, max: 90 }
+                        },
+                        
+                        // Epic Monsters (5% total probability)
                         {
                             reward_type: 'creature',
                             creature_name: 'Storm Wyvern',
                             creature_Id: 'storm_wyvern',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 0, max: 10 }
+                            chance: 0.5,
+                            probability_range: { min: 90, max: 90.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Mystic Oni',
                             creature_Id: 'mystic_oni',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 10, max: 20 }
+                            chance: 0.5,
+                            probability_range: { min: 90.5, max: 91 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Magma Manticore',
                             creature_Id: 'magma_manticore',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 20, max: 30 }
+                            chance: 0.5,
+                            probability_range: { min: 91, max: 91.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Forest Djinn',
                             creature_Id: 'forest_djinn',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 30, max: 40 }
+                            chance: 0.5,
+                            probability_range: { min: 91.5, max: 92 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Void Drake',
                             creature_Id: 'void_drake',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 40, max: 50 }
+                            chance: 0.5,
+                            probability_range: { min: 92, max: 92.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Royal Gargoyle',
                             creature_Id: 'royal_gargoyle',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 50, max: 60 }
+                            chance: 0.5,
+                            probability_range: { min: 92.5, max: 93 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Star Behemoth',
                             creature_Id: 'star_behemoth',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 60, max: 70 }
+                            chance: 0.5,
+                            probability_range: { min: 93, max: 93.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Armor Dragon',
                             creature_Id: 'armor_dragon',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 70, max: 80 }
+                            chance: 0.5,
+                            probability_range: { min: 93.5, max: 94 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Gold Dragon',
                             creature_Id: 'gold_dragon',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 80, max: 90 }
+                            chance: 0.5,
+                            probability_range: { min: 94, max: 94.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Mystic Kelpie',
                             creature_Id: 'mystic_kelpie',
                             rarity: 'epic',
-                            chance: 10,
-                            probability_range: { min: 90, max: 100 }
-                        }
-                    ]
-                },
-                // Card 4 - Legendary Monsters (Each has 4% chance)
-                {
-                    card_number: 4,
-                    rewards: [
+                            chance: 0.5,
+                            probability_range: { min: 94.5, max: 95 }
+                        },
+                        
+                        // Legendary Monsters (5% total probability)
                         {
                             reward_type: 'creature',
                             creature_name: 'Death Wyvern',
                             creature_Id: 'death_wyvern',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 0, max: 10 }
+                            chance: 0.5,
+                            probability_range: { min: 95, max: 95.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Rage Oni',
                             creature_Id: 'rage_oni',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 10, max: 20 }
+                            chance: 0.5,
+                            probability_range: { min: 95.5, max: 96 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Abyss Manticore',
                             creature_Id: 'abyss_manticore',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 20, max: 30 }
+                            chance: 0.5,
+                            probability_range: { min: 96, max: 96.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Ember Djinn',
                             creature_Id: 'ember_djinn',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 30, max: 40 }
+                            chance: 0.5,
+                            probability_range: { min: 96.5, max: 97 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Elder Drake',
                             creature_Id: 'elder_drake',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 40, max: 50 }
+                            chance: 0.5,
+                            probability_range: { min: 97, max: 97.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'War Minotaur',
                             creature_Id: 'war_minotaur',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 50, max: 60 }
+                            chance: 0.5,
+                            probability_range: { min: 97.5, max: 98 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Dark Behemoth',
                             creature_Id: 'dark_behemoth',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 60, max: 70 }
+                            chance: 0.5,
+                            probability_range: { min: 98, max: 98.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Flame Dragon',
                             creature_Id: 'flame_dragon',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 70, max: 80 }
+                            chance: 0.5,
+                            probability_range: { min: 98.5, max: 99 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Nether Dragon',
                             creature_Id: 'nether_dragon',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 80, max: 90 }
+                            chance: 0.5,
+                            probability_range: { min: 99, max: 99.5 }
                         },
                         {
                             reward_type: 'creature',
                             creature_name: 'Celestial Unicorn',
                             creature_Id: 'celestial_unicorn',
                             rarity: 'legendary',
-                            chance: 10,
-                            probability_range: { min: 90, max: 100 }
+                            chance: 0.5,
+                            probability_range: { min: 99.5, max: 100 }
                         }
                     ]
                 }

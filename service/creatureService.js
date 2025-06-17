@@ -612,6 +612,108 @@ async function mergeCreatures(userId, creature1Id, creature2Id) {
     }
 }
 
+/**
+ * Sell a creature and get half its anima value
+ * @param {string} userId - User ID
+ * @param {string} creatureId - Creature ID to sell
+ * @returns {Promise<Object>} Result of the sale
+ */
+async function sellCreature(userId, creatureId) {
+    try {
+        console.log(`Attempting to sell creature ${creatureId} for user ${userId}`);
+        
+        // Find the user
+        const user = await User.findOne({ userId });
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Find the creature in user's creatures
+        const creatureIndex = user.creatures.findIndex(c => c._id.toString() === creatureId);
+        if (creatureIndex === -1) {
+            console.log(`Creature ${creatureId} not found in user ${userId}'s collection`);
+            throw new Error('Creature not found in user collection');
+        }
+
+        const creature = user.creatures[creatureIndex];
+        console.log(`Found creature: ${JSON.stringify(creature)}`);
+        
+        // Calculate anima value based on creature level and type
+        let baseAnima = 80; // Default base anima (changed from 100 to 80)
+        
+        // Try to find creature template for accurate base anima
+        try {
+            const templateCreature = await Creature.findOne({ 
+                $or: [
+                    { creature_Id: creature.creature_Id_reference },
+                    { creature_type: creature.creature_type },
+                    { name: creature.name }
+                ]
+            });
+            
+            if (templateCreature && templateCreature.anima_cost) {
+                baseAnima = templateCreature.anima_cost;
+            } else if (templateCreature && templateCreature.base_anima) {
+                baseAnima = templateCreature.base_anima;
+            }
+            console.log(`Using base anima value: ${baseAnima} for creature ${creature.name}`);
+        } catch (err) {
+            console.log('Error finding creature template, using default base anima:', err);
+        }
+        
+        // Calculate anima based on level
+        const creatureLevel = creature.level || 1;
+        const animaToCredit = Math.floor((baseAnima * creatureLevel) / 2);
+
+        // Store creature details before removal
+        const creatureDetails = {
+            name: creature.name || 'Unknown Creature',
+            level: creatureLevel,
+            type: creature.type || 'common'
+        };
+
+        // Remove the creature from user's creatures
+        user.creatures.splice(creatureIndex, 1);
+        
+        // Remove from battle_selected_creatures if present
+        if (user.battle_selected_creatures && Array.isArray(user.battle_selected_creatures)) {
+            const battleCreatureIndex = user.battle_selected_creatures.findIndex(
+                bc => bc.creature_id && bc.creature_id.toString() === creatureId
+            );
+            
+            if (battleCreatureIndex !== -1) {
+                user.battle_selected_creatures.splice(battleCreatureIndex, 1);
+                user.markModified('battle_selected_creatures');
+            }
+        }
+        
+        // Add the anima value to user's currency
+        if (!user.currency) {
+            user.currency = {};
+        }
+        const previousAnima = user.currency.anima || 0;
+        user.currency.anima = previousAnima + animaToCredit;
+        user.markModified('currency');
+        
+        // Save the user
+        await user.save();
+        
+        console.log(`Successfully sold creature ${creatureId} for ${animaToCredit} anima`);
+
+        return {
+            creature_name: creatureDetails.name,
+            creature_level: creatureDetails.level,
+            creature_type: creatureDetails.type,
+            anima_credited: animaToCredit,
+            previous_anima: previousAnima,
+            new_anima: user.currency.anima
+        };
+    } catch (error) {
+        console.error('Error in sellCreature:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     getAllCreatures,
     getCreatureById,
@@ -619,5 +721,6 @@ module.exports = {
     updateCreatureLevel,
     createCreature,
     speedUpUnlock,
-    mergeCreatures
+    mergeCreatures,
+    sellCreature
 };

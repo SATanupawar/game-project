@@ -24,56 +24,76 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
         }
 
         // Format player attributes according to GameLift requirements
-        const formattedAttributes = {};
-        
-        // Convert each attribute to the proper format
-        Object.keys(playerAttributes).forEach(key => {
-            const value = playerAttributes[key];
-            
-            // Create appropriate attribute structure based on value type
-            if (typeof value === 'number') {
-                formattedAttributes[key] = { N: value };
-            } else if (typeof value === 'string') {
-                formattedAttributes[key] = { S: value };
-            } else if (Array.isArray(value)) {
-                if (value.every(item => typeof item === 'string')) {
-                    formattedAttributes[key] = { SL: value };
-                } else if (value.every(item => typeof item === 'number')) {
-                    formattedAttributes[key] = { NL: value };
-                }
-            } else if (typeof value === 'object' && value !== null) {
-                // Handle nested objects like latencies
-                const nestedAttributes = {};
-                Object.keys(value).forEach(nestedKey => {
-                    if (typeof value[nestedKey] === 'number') {
-                        nestedAttributes[nestedKey] = value[nestedKey];
-                    }
-                });
-                if (Object.keys(nestedAttributes).length > 0) {
-                    formattedAttributes[key] = { SDM: nestedAttributes };
-                }
+        const flatAttributes = {};
+        let playerLatencies = [];
+
+        if (playerAttributes.latencies) {
+            // Handle nested SDM format
+            if (playerAttributes.latencies.SDM) {
+                // Extract the latencies for each region
+                const apSouthLatency = playerAttributes.latencies.SDM["ap-south-1"] || 999;
+                const usEastLatency = playerAttributes.latencies.SDM["us-east-1"] || 999;
+                
+                // Add them as separate attributes with the format expected by the ruleset
+                flatAttributes.latency_ap_south_1 = { N: apSouthLatency };
+                flatAttributes.latency_us_east_1 = { N: usEastLatency };
+                
+                // Also add them to PlayerLatencies format for GameLift
+                playerLatencies = [
+                    { RegionName: "ap-south-1", LatencyInMilliseconds: apSouthLatency },
+                    { RegionName: "us-east-1", LatencyInMilliseconds: usEastLatency }
+                ];
+            } 
+            // Handle flat format
+            else {
+                // Extract the latencies for each region
+                const apSouthLatency = playerAttributes.latencies["ap-south-1"] || 999;
+                const usEastLatency = playerAttributes.latencies["us-east-1"] || 999;
+                
+                // Add them as separate attributes with the format expected by the ruleset
+                flatAttributes.latency_ap_south_1 = { N: apSouthLatency };
+                flatAttributes.latency_us_east_1 = { N: usEastLatency };
+                
+                // Also add them to PlayerLatencies format for GameLift
+                playerLatencies = [
+                    { RegionName: "ap-south-1", LatencyInMilliseconds: apSouthLatency },
+                    { RegionName: "us-east-1", LatencyInMilliseconds: usEastLatency }
+                ];
             }
-        });
+            delete playerAttributes.latencies;
+        } else {
+            // If we have individual latency attributes, convert them to PlayerLatencies format
+            if (playerAttributes.latency_ap_south_1 !== undefined && playerAttributes.latency_us_east_1 !== undefined) {
+                const apSouthLatency = typeof playerAttributes.latency_ap_south_1 === 'object' ? 
+                    playerAttributes.latency_ap_south_1.N : playerAttributes.latency_ap_south_1;
+                const usEastLatency = typeof playerAttributes.latency_us_east_1 === 'object' ? 
+                    playerAttributes.latency_us_east_1.N : playerAttributes.latency_us_east_1;
+                
+                playerLatencies = [
+                    { RegionName: "ap-south-1", LatencyInMilliseconds: Number(apSouthLatency) },
+                    { RegionName: "us-east-1", LatencyInMilliseconds: Number(usEastLatency) }
+                ];
+            }
+        }
+        Object.assign(flatAttributes, playerAttributes);
 
         // Create player objects for each player ID
-        const players = playerIds.map(id => ({
-            PlayerId: id,
-            PlayerAttributes: formattedAttributes
-        }));
-
-        // Build PlayerLatencies array if latencies are provided
-        let playerLatencies = [];
-        if (playerAttributes.latencies && typeof playerAttributes.latencies === 'object') {
-            Object.entries(playerAttributes.latencies).forEach(([region, latency]) => {
-                if (typeof latency === 'number') {
-                    playerLatencies.push({
-                        PlayerId: userId,
-                        RegionIdentifier: region,
-                        LatencyInMilliseconds: latency
-                    });
-                }
-            });
-        }
+        const players = playerIds.map(id => {
+            const playerObj = {
+                PlayerId: id,
+                PlayerAttributes: flatAttributes
+            };
+            
+            // Add PlayerLatencies if available
+            if (playerLatencies.length > 0) {
+                playerObj.LatencyInMs = {};
+                playerLatencies.forEach(latency => {
+                    playerObj.LatencyInMs[latency.RegionName] = latency.LatencyInMilliseconds;
+                });
+            }
+            
+            return playerObj;
+        });
 
         // Generate a unique ticket ID
         const ticketId = `ticket-${userId}-${uuidv4()}`;
@@ -90,8 +110,6 @@ async function createMatchmakingTicket(userId, playerAttributes, playerIds = [])
             ConfigurationName: configName,
             Players: players,
             TicketId: ticketId,
-            // Add PlayerLatencies only if present
-            ...(playerLatencies.length > 0 ? { PlayerLatencies: playerLatencies } : {})
         };
 
         console.log('Starting matchmaking with params:', JSON.stringify(params, null, 2));

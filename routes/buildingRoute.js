@@ -115,4 +115,71 @@ router.get('/available/:level', async (req, res) => {
     }
 });
 
+// Sell a building
+router.post('/sell/:userId/:buildingIndex', async (req, res) => {
+    try {
+        const { userId, buildingIndex } = req.params;
+        
+        console.log(`Received request to sell building. User: ${userId}, Building Index: ${buildingIndex}`);
+        
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+        
+        if (!buildingIndex) {
+            return res.status(400).json({
+                success: false,
+                message: 'Building index is required'
+            });
+        }
+        
+        // Convert buildingIndex to number
+        const buildingIndexNumber = parseInt(buildingIndex, 10);
+        if (isNaN(buildingIndexNumber)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Building index must be a valid number'
+            });
+        }
+        
+        const result = await buildingService.sellBuilding(userId, buildingIndexNumber);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Building sold successfully',
+            data: result
+        });
+    } catch (error) {
+        console.error('Error selling building:', error);
+        
+        // Check for specific error types
+        if (error.message.includes('creatures')) {
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+                error_code: 'CREATURES_PRESENT'
+            });
+        } else if (error.message.includes('not found')) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        } else if (error.message.includes('must be a valid number')) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: 'Error selling building',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

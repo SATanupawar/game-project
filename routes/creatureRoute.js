@@ -2249,56 +2249,56 @@ router.get('/check-upgrade-progress/:userId', async (req, res) => {
     }
 });
 
-router.post('/:userId/sell', async (req, res) => {
+// Sell a creature - using /user/:userId/sell format
+router.post('/user/:userId/sell', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { creatureId } = req.body; // This is now a string like "tulpar" or "blood_oni"
-
-        const user = await User.findOne({ userId });
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-        // Find creature in user's collection by creature_Id_reference or creature_type
-        const userCreatureIndex = user.creatures.findIndex(
-            c => c.creature_Id_reference === creatureId || c.creature_type === creatureId
-        );
-        if (userCreatureIndex === -1) {
-            return res.status(404).json({ success: false, message: 'Creature not found in user collection' });
+        const { creatureId } = req.body;
+        
+        console.log(`Received request to sell creature. User: ${userId}, Creature ID: ${creatureId}`);
+        console.log(`Request body: ${JSON.stringify(req.body)}`);
+        
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
         }
-        const userCreature = user.creatures[userCreatureIndex];
-
-        // Fetch base anima from Creature template
-        let baseAnima = 100;
-        const templateCreature = await Creature.findOne({ creature_Id: userCreature.creature_Id_reference || userCreature.creature_type });
-        if (templateCreature && templateCreature.base_anima) {
-            baseAnima = templateCreature.base_anima;
+        
+        if (!creatureId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Creature ID is required in the request body'
+            });
         }
-
-        // Calculate anima to credit
-        const animaToCredit = Math.floor((baseAnima * (userCreature.level || 1)) / 2);
-
-        // Remove from user's creatures
-        user.creatures.splice(userCreatureIndex, 1);
-
-        // Remove from battle_selected_creatures if present
-        if (user.battle_selected_creatures && Array.isArray(user.battle_selected_creatures)) {
-            user.battle_selected_creatures = user.battle_selected_creatures.filter(
-                c => c.creature_Id_reference !== creatureId && c.creature_type !== creatureId
-            );
-        }
-
-        // Credit anima
-        if (!user.currency) user.currency = {};
-        user.currency.anima = (user.currency.anima || 0) + animaToCredit;
-
-        await user.save();
-
-        return res.json({
+        
+        // Get the creature service
+        const creatureService = require('../service/creatureService');
+        
+        // Sell the creature
+        const result = await creatureService.sellCreature(userId, creatureId);
+        
+        res.status(200).json({
             success: true,
             message: 'Creature sold successfully',
-            anima_credited: animaToCredit
+            data: result
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error selling creature:', error);
+        
+        // Check for specific error types
+        if (error.message.includes('not found')) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: 'Error selling creature',
+            error: error.message
+        });
     }
 });
 
