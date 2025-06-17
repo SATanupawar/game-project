@@ -43,6 +43,7 @@ const matchmakingRoutes = require('./routes/matchmakingRoute');
 const questRoutes = require('./routes/questRoute');
 const pathRoutes = require('./routes/paths');
 const spinWheelRoutes = require('./routes/spinWheel');
+const ticketRoutes = require('./routes/ticketRoute');
 const User = require('./models/user');
 const Creature = require('./models/creature');
 const mongoose = require('mongoose');
@@ -79,6 +80,9 @@ app.use(requestLogger);
 // Serve static files from the public directory
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Public routes
 app.use('/api/users', userRoutes); // Registration and user creation should remain public
 app.use('/api/auth', authRoutes); // New auth routes - public access
@@ -91,6 +95,7 @@ app.use('/api/offers', offerRoute); // Offer routes
 // Protected routes (require authentication)
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/creatures', creatureRoutes);
+app.use('/api/tickets', ticketRoutes);
 
 // Initialize creature slots during startup
 const CreatureSlot = require('./models/creatureSlot');
