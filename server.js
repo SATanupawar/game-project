@@ -97,11 +97,8 @@ app.use('/api/buildings', buildingRoutes);
 app.use('/api/creatures', creatureRoutes);
 app.use('/api/tickets', ticketRoutes);
 
-// Initialize creature slots during startup
+// Initialize creature slots only done once after MongoDB connection
 const CreatureSlot = require('./models/creatureSlot');
-CreatureSlot.initializeSlots()
-  .then(() => console.log('Creature slots initialized'))
-  .catch(err => console.error('Error initializing creature slots:', err));
 app.use('/api/card-packs', cardPackRoutes);
 app.use('/api/building-decorations', buildingDecorationRoutes);
 app.use('/api/chests', chestRoutes);
@@ -724,6 +721,34 @@ app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the Game Backend API' });
 });
 
+// Health check endpoint for Kubernetes
+app.get('/api/health', async (req, res) => {
+    try {
+        // Simple check to see if MongoDB is connected
+        const isMongoConnected = mongoose.connection.readyState === 1;
+        
+        if (isMongoConnected) {
+            res.status(200).json({ 
+                status: 'ok',
+                message: 'Service is healthy',
+                mongodb: 'connected'
+            });
+        } else {
+            res.status(503).json({ 
+                status: 'error',
+                message: 'Service is unhealthy',
+                mongodb: 'disconnected'
+            });
+        }
+    } catch (error) {
+        console.error('Health check failed:', error);
+        res.status(503).json({ 
+            status: 'error', 
+            message: 'Health check failed'
+        });
+    }
+});
+
 // Serve the log downloader HTML page
 app.get('/log-downloader', (req, res) => {
     res.sendFile(path.join(__dirname, 'download-logs.html'));
@@ -752,7 +777,6 @@ mongoose
     console.log('Connected to MongoDB');
     
     // Initialize creature slots
-    const CreatureSlot = require('./models/creatureSlot');
     CreatureSlot.initializeSlots()
       .then(() => console.log('Creature slots initialized'))
       .catch(err => console.error('Error initializing creature slots:', err));

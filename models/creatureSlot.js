@@ -28,8 +28,7 @@ const creatureSlotSchema = new mongoose.Schema({
 
 // Create slots if they don't exist
 creatureSlotSchema.statics.initializeSlots = async function() {
-    const count = await this.countDocuments();
-    if (count === 0) {
+    try {
         const slots = [
             { slot_number: 1, is_elite: false, gold_cost: 0, description: 'Basic slot for common creatures' },
             { slot_number: 2, is_elite: false, gold_cost: 200, description: 'Basic slot for common creatures' },
@@ -38,8 +37,20 @@ creatureSlotSchema.statics.initializeSlots = async function() {
             { slot_number: 5, is_elite: true, gold_cost: 0, description: 'Elite slot for special creatures' }
         ];
         
-        await this.insertMany(slots);
-        console.log('Creature slots initialized');
+        // Use bulkWrite with updateOne operations and upsert option
+        const bulkOps = slots.map(slot => ({
+            updateOne: {
+                filter: { slot_number: slot.slot_number },
+                update: { $set: slot },
+                upsert: true
+            }
+        }));
+        
+        await this.bulkWrite(bulkOps);
+        console.log('Creature slots initialized or updated successfully');
+    } catch (error) {
+        console.error('Error initializing creature slots:', error);
+        throw error;
     }
 };
 
