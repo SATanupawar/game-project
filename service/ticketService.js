@@ -30,25 +30,31 @@ class TicketService {
      */
     async createTicket(ticketData) {
         try {
+            // Validate userName is provided
+            if (!ticketData.userName) {
+                throw new Error('userName is required');
+            }
+
             // Create ticket with provided data
             const ticket = new Ticket({
                 userId: ticketData.userId,
                 userEmail: ticketData.userEmail || 'unknown@email.com',
-                userName: ticketData.userName || 'Player',
+                userName: ticketData.userName, // Use provided userName without any default
                 category: ticketData.category,
                 subcategory: ticketData.subcategory,
-                subject: ticketData.subject || ticketData.subcategory, // Use subcategory as subject if not provided
+                subject: ticketData.subject || ticketData.subcategory,
                 description: ticketData.description,
                 priority: this._determinePriority(ticketData.category, ticketData.subcategory),
                 responses: [{
                     message: ticketData.description,
-                    sentBy: 'user'
+                    sentBy: 'user',
+                    senderId: ticketData.userId
                 }]
             });
             
             // Save the ticket
             const savedTicket = await ticket.save();
-            console.log(`Ticket created: ${savedTicket.ticketId} for user ${savedTicket.userId}`);
+            console.log(`Ticket created: ${savedTicket.ticketId} for user ${savedTicket.userId} with name ${savedTicket.userName}`);
             
             // Send confirmation email to user
             try {
@@ -135,6 +141,7 @@ class TicketService {
             ticket.responses.push({
                 message,
                 sentBy,
+                senderId,
                 sentAt: new Date()
             });
             

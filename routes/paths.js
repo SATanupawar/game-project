@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const User = require('../models/user');
+const redis = require('redis');
+const { createClient } = require('ioredis');
+const os = require('os');
 
 /**
  * @route   POST /api/paths/add/:userId
@@ -212,6 +215,47 @@ router.delete('/:userId', async (req, res) => {
         console.error('Error deleting all placed paths:', err);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
+});
+
+// Health check endpoint for Kubernetes
+router.get('/health', async (req, res) => {
+  try {
+    const healthCheck = {
+      uptime: process.uptime(),
+      timestamp: Date.now(),
+      message: 'OK',
+      mongodb_connected: mongoose.connection.readyState === 1,
+      hostname: os.hostname(),
+      service: 'game-backend'
+    };
+    
+    // Add Redis check if Redis is configured
+    if (process.env.REDIS_URL) {
+      try {
+        const redisClient = createClient({
+          url: process.env.REDIS_URL
+        });
+        await redisClient.connect();
+        const pong = await redisClient.ping();
+        healthCheck.redis_connected = pong === 'PONG';
+        await redisClient.disconnect();
+      } catch (redisError) {
+        console.error('Redis health check failed:', redisError);
+        healthCheck.redis_connected = false;
+      }
+    } else {
+      healthCheck.redis_connected = 'not_configured';
+    }
+
+    res.status(200).json(healthCheck);
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(503).json({
+      uptime: process.uptime(),
+      message: 'Service Unavailable',
+      error: error.message
+    });
+  }
 });
 
 module.exports = router; 

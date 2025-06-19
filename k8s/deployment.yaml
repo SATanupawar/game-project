@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-backend
+  labels:
+    app: game-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: game-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: game-backend
+    spec:
+      containers:
+      - name: game-backend
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/game-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: mongodb-uri
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: redis-url
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: secret-key
+        - name: AWS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-region
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-secret-access-key
+        - name: AWS_GAMELIFT_FLEET_ID
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-gamelift-fleet-id
+        - name: AWS_GAMELIFT_MATCHMAKING_CONFIG_ARN
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-gamelift-matchmaking-config-arn
+        - name: AWS_GAMELIFT_MATCHMAKING_RULESET_ARN
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-gamelift-matchmaking-ruleset-arn
+        - name: AWS_GAMELIFT_QUEUE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: aws-gamelift-queue-name
+        - name: firebase_type
+          value: "service_account"
+        - name: firebase_project_id
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: firebase-project-id
+        - name: firebase_private_key_id
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: firebase-private-key-id
+        - name: firebase_private_key
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: firebase-private-key
+        - name: firebase_client_id
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: firebase-client-id
+        - name: firebase_auth_uri
+          value: "https://accounts.google.com/o/oauth2/auth"
+        - name: firebase_token_uri
+          value: "https://oauth2.googleapis.com/token"
+        - name: firebase_auth_provider_x509_cert_url
+          value: "https://www.googleapis.com/oauth2/v1/certs"
+        - name: firebase_client_x509_cert_url
+          valueFrom:
+            secretKeyRef:
+              name: game-backend-secrets
+              key: firebase-client-x509-cert-url
+        - name: firebase_universe_domain
+          value: "googleapis.com"
+        volumeMounts:
+        - name: uploads
+          mountPath: /usr/src/app/uploads
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: game-backend-uploads-pvc 

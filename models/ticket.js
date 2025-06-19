@@ -48,6 +48,7 @@ const ticketSchema = new mongoose.Schema({
         fileName: String,
         fileUrl: String,
         fileType: String,
+        fileSize: Number,
         uploadDate: Date
     }],
     responses: [{
@@ -56,6 +57,10 @@ const ticketSchema = new mongoose.Schema({
             type: String,
             enum: ['user', 'admin'],
             required: true
+        },
+        senderId: {
+            type: String,
+            required: false
         },
         sentAt: {
             type: Date,

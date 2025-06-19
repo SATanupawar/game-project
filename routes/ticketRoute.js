@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const TicketCategory = require('../models/ticketCategory');
+const User = require('../models/user');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -50,7 +51,7 @@ const upload = multer({
  */
 router.post('/', upload.array('attachments', 5), async (req, res) => {
     try {
-        const { category, subcategory, description, userId, userEmail, userName, subject } = req.body;
+        const { category, subcategory, description, userId, userEmail, subject } = req.body;
         
         // Validate required fields
         if (!category || !subcategory || !description || !userId) {
@@ -59,6 +60,17 @@ router.post('/', upload.array('attachments', 5), async (req, res) => {
                 message: 'Missing required fields: category, subcategory, description, userId'
             });
         }
+
+        // Find user to get correct user name
+        const user = await User.findOne({ userId }).select('user_name userEmail');
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        console.log('Found user:', { userId, user_name: user.user_name }); // Add logging
         
         // Validate email format if provided
         if (userEmail) {
@@ -79,22 +91,30 @@ router.post('/', upload.array('attachments', 5), async (req, res) => {
                     fileName: file.originalname,
                     fileUrl: `/uploads/tickets/${file.filename}`,
                     fileType: file.mimetype,
+                    fileSize: file.size,
                     uploadDate: new Date()
                 });
             }
         }
         
-        // Create ticket data
+        // Create ticket data with correct user name
         const ticketData = {
             userId,
-            userEmail,
-            userName,
+            userEmail: userEmail || user.userEmail || 'unknown@email.com',
+            userName: user.user_name || 'Player', // Use user_name field directly from user object
             category,
             subcategory,
             subject,
             description,
             attachments
         };
+
+        console.log('Creating ticket with data:', { 
+            userId: ticketData.userId,
+            userName: ticketData.userName,
+            category: ticketData.category,
+            subcategory: ticketData.subcategory
+        });
         
         // Create ticket
         const ticket = await ticketService.createTicket(ticketData);
@@ -105,7 +125,8 @@ router.post('/', upload.array('attachments', 5), async (req, res) => {
             data: {
                 ticketId: ticket.ticketId,
                 status: ticket.status,
-                createdAt: ticket.createdAt
+                createdAt: ticket.createdAt,
+                userName: ticket.userName // Add userName to response for verification
             }
         });
     } catch (error) {
@@ -154,6 +175,52 @@ router.get('/', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to get tickets',
+            error: error.message
+        });
+    }
+});
+
+/**
+ * @route GET /api/tickets/categories
+ * @description Get all ticket categories and subcategories
+ * @access Public
+ */
+router.get('/categories', async (req, res) => {
+    try {
+        const categories = await TicketCategory.find({ active: true })
+            .select('name icon subcategories')
+            .sort({ name: 1 });
+        
+        if (!categories || categories.length === 0) {
+            // If no categories found, initialize them
+            const initScript = require('../scripts/initialize-ticket-categories');
+            await initScript();
+            
+            // Try fetching again
+            categories = await TicketCategory.find({ active: true })
+                .select('name icon subcategories')
+                .sort({ name: 1 });
+        }
+
+        const formattedCategories = categories.map(cat => ({
+            name: cat.name,
+            icon: cat.icon,
+            subcategories: cat.subcategories.map(sub => ({
+                name: sub.name,
+                description: sub.description || ''
+            }))
+        }));
+        
+        res.status(200).json({
+            success: true,
+            count: formattedCategories.length,
+            data: formattedCategories
+        });
+    } catch (error) {
+        console.error('Error getting ticket categories:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get ticket categories',
             error: error.message
         });
     }
@@ -233,7 +300,7 @@ router.post('/:ticketId/responses', async (req, res) => {
             ticketId,
             message,
             'user',
-            userId
+            userId  // Pass the userId as senderId
         );
         
         res.status(200).json({
@@ -250,30 +317,6 @@ router.post('/:ticketId/responses', async (req, res) => {
         res.status(error.message === 'Ticket not found' ? 404 : 500).json({
             success: false,
             message: error.message === 'Ticket not found' ? 'Ticket not found' : 'Failed to add response',
-            error: error.message
-        });
-    }
-});
-
-/**
- * @route GET /api/tickets/categories
- * @description Get all ticket categories and subcategories
- * @access Public
- */
-router.get('/categories', async (req, res) => {
-    try {
-        const categories = await TicketCategory.find({ active: true }).sort({ name: 1 });
-        
-        res.status(200).json({
-            success: true,
-            count: categories.length,
-            data: categories
-        });
-    } catch (error) {
-        console.error('Error getting ticket categories:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to get ticket categories',
             error: error.message
         });
     }
