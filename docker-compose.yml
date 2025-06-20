@@ -10,6 +10,7 @@ services:
       - PORT=3000
       - MONGODB_URI=mongodb://mongodb:27017/game-db
       - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     depends_on:
       - mongodb
       - redis
@@ -38,10 +39,20 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
     networks:
       - app-network
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server /usr/local/etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   app-network:

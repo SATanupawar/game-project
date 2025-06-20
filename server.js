@@ -10,11 +10,15 @@ if (fs.existsSync(envPath)) {
     // Read and log the first few characters of the file (without sensitive data)
     const envContent = fs.readFileSync(envPath, 'utf8');
     console.log('First 100 characters of .env file:', envContent.substring(0, 100));
+    
+    // Only try to load the .env file if it exists
+    require('dotenv').config({ path: envPath });
 } else {
     console.log('.env file does not exist');
+    // In Docker/production, environment variables should already be set
+    // via docker-compose env_file or other mechanisms
+    console.log('Running in Docker/production environment, using pre-configured environment variables');
 }
-
-require('dotenv').config({ path: envPath });
 
 // Debug environment variables
 console.log('\nEnvironment variables loaded:');
@@ -56,6 +60,7 @@ const battlePassProgressRoutes = require('./routes/battlePassProgressRoute');
 const subscriptionService = require('./service/subscriptionService');
 const gameLiftLogsRoutes = require('./routes/logs');
 const offerRoute = require('./routes/offerRoute');
+const redisService = require('./service/redisService');
 
 // Import logging middleware
 const { requestLogger, errorLogger } = require('./middleware/loggerMiddleware');
@@ -112,6 +117,20 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', battlePassProgressRoutes);
 app.use('/api/paths', pathRoutes);
 app.use('/api/spin-wheel', spinWheelRoutes);
+
+// Redis health check endpoint
+app.get('/api/health/redis', async (req, res) => {
+  try {
+    const healthStatus = await redisService.healthCheck();
+    res.status(healthStatus.status === 'connected' ? 200 : 503).json(healthStatus);
+  } catch (error) {
+    console.error('Error checking Redis health:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
 
 // Direct endpoint to get a user's data with battle creatures
 app.get('/api/user/:userId/battle-data', async (req, res) => {
